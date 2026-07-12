@@ -25,3 +25,7 @@ __temp__.mp4
 
 # 관찰 도구 산출물 (플롯 등, 재생성 가능)
 outputs/
+
+# phase 2 실험 산출물 (플롯/CSV, 재생성 가능) — 단 summary.md는 추적
+results/
+!results/summary.md
