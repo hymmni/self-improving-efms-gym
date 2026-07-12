@@ -24,6 +24,7 @@ import tensorflow as tf
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pointmass_core import (  # noqa: E402
+    Point2D, pd_controller, generate_dataset,
     build_continuous_act_discrete_dist_v0, build_discrete_distance_converter,
     PretrainLearner, compute_normalization_stats, make_normalizers,
     make_timer_rollout_policy)
@@ -56,6 +57,9 @@ def main():
   ap.add_argument('--jitter', type=float, default=0.08)
   ap.add_argument('--seed', type=int, default=0)
   ap.add_argument('--eval_episodes', type=int, default=50)
+  ap.add_argument('--map', choices=['multimodal', 'standard'], default='multimodal')
+  ap.add_argument('--num_bins', type=int, default=None,
+                  help='override; default 64 (multimodal) / 140 (standard)')
   ap.add_argument('--out_dir', default='checkpoints/mm')
   args = ap.parse_args()
 
@@ -67,17 +71,24 @@ def main():
   # distance loss passes raw time_to_success as the Categorical class label (the
   # computed bin index is unused — a latent bug in the original). With bin_size=1,
   # class == floor(ttg/1) == ttg, so that convention becomes correct and the
-  # predicted mean E[STG] is calibrated in real step units (see step-2 notes).
-  # num_bins=64 safely covers the longest multimodal detour (~47 steps).
-  min_d, max_d, nbins = 0, 64, 64
+  # predicted mean E[STG] is calibrated in real step units. num_bins must cover
+  # the longest episode: ~47 for multimodal detours, up to ~140 on the standard map.
+  nbins = args.num_bins or (140 if args.map == 'standard' else 64)
+  min_d, max_d = 0, nbins
   layers = (256, 256, 256)
   print(f'JAX devices: {jax.devices()}')
 
-  # dataset (multimodal)
-  print(f'Generating multimodal dataset ({args.dataset_episodes} eps)...')
-  _, all_tuples, sides = generate_multimodal_dataset(
-      num_episodes=args.dataset_episodes, jitter=args.jitter, seed=args.seed)
-  print(f'  sides={sides}, transitions={all_tuples.observation["cur_pos"].shape[0]}')
+  # dataset
+  if args.map == 'standard':
+    print(f'Generating standard dataset ({args.dataset_episodes} eps)...')
+    _, all_tuples = generate_dataset(
+        Point2D(), pd_controller, num_episodes=args.dataset_episodes)
+  else:
+    print(f'Generating multimodal dataset ({args.dataset_episodes} eps)...')
+    _, all_tuples, sides = generate_multimodal_dataset(
+        num_episodes=args.dataset_episodes, jitter=args.jitter, seed=args.seed)
+    print(f'  sides={sides}')
+  print(f'  transitions={all_tuples.observation["cur_pos"].shape[0]}')
 
   norm_stats = compute_normalization_stats(all_tuples)
   normalize_obs, normalize_action, unnormalize_action = make_normalizers(norm_stats)
@@ -115,7 +126,8 @@ def main():
       frac = milestones[i]
       params = learner.get_state().params
       mae, nll = predictor_metrics(nets, params, dc, val_for_metrics, nbins)
-      env = MultiModalPoint2D(jitter=args.jitter)
+      env = (Point2D() if args.map == 'standard'
+             else MultiModalPoint2D(jitter=args.jitter))
       stats = evaluate_policy(env, params, args.eval_episodes, rollout,
                               normalize_obs, unnormalize_action, max_d)
       sr = float(np.mean(stats['success']))
