@@ -20,3 +20,4 @@ tensorflow-probability==0.25.0
 tf_keras==2.21.0
 tf_keras-nightly==2.21.0.dev2026070209
 tfp-nightly==0.26.0.dev20260702
+pytest
