@@ -6,11 +6,12 @@
     "jitter": 0.08
   },
   "predictor": {
+    "_comment": "bin_size=1 (max_distance==num_bins) so E[STG] is calibrated in real steps and the notebook's raw-ttg-as-class label becomes correct; 64 bins cover the longest detour.",
     "num_steps": 20000,
     "dataset_episodes": 4000,
-    "num_bins": 50,
+    "num_bins": 64,
     "min_distance": 0,
-    "max_distance": 140,
+    "max_distance": 64,
     "layer_sizes": [256, 256, 256],
     "learning_rate": 3e-4,
     "global_minibatch_size": 256,
