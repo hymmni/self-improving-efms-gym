@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Harness — git은 gym 환경 코드만 추적한다 (harness 파일은 로컬 전용)
+.claude/
+docs/
+scripts/
+experiments/
+phases/
+references/
+CLAUDE.md
+continuation_plan.md
+
+# 대용량 데이터/체크포인트 (ADR-002)
+*.zarr
+*.hdf5
+*.pth
+
+# pointmass_notebook.ipynb 실행 시 생성되는 런타임 산출물 (재실행으로 재생성 가능)
+pointmass_dataset*.pkl
+ten_tight_pointmass_*.png
+__temp__.mp4
