@@ -22,3 +22,6 @@ checkpoints/
 pointmass_dataset*.pkl
 ten_tight_pointmass_*.png
 __temp__.mp4
+
+# 관찰 도구 산출물 (플롯 등, 재생성 가능)
+outputs/
