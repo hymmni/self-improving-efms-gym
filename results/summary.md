@@ -1,94 +1,89 @@
-# Variance-Reward Experiments — Summary
+# steps-to-go 분산 기반 보상 함수 — 실험 요약
 
-Testing the claim: *using the **variance** of the steps-to-go distribution in the
-reward (not just its expectation) improves self-improvement over the SI-EFM
-baseline.* Priority (advisor): a clear result at small scale over a large one.
+> 시각 자료가 포함된 상세 보고서(웹 페이지)는 별도로 사용자에게 전달됨. 이 문서는 레포에 보관되는 텍스트 버전이다. 이미지는 `results/` 하위(git 미추적, `python -m src.run_experiment --exp ...`로 재생성 가능)를 상대경로로 참조한다.
 
-Reward definitions (`src/reward.py`):
-- baseline (eq 1.1): `r = μ_t − μ_{t+1}`
-- ours (eq 1.2): `r = α·(μ_t − μ_{t+1}) + β·(σ²_t − σ²_{t+1})/σ²_t`  (baseline = β=0)
+**검증 대상**: SI-EFM(Self-Improving Embodied Foundation Models)은 steps-to-go 분포의 **기댓값** 변화만으로 보상을 만든다. 여기에 분포의 **분산**을 추가하면 학습이 더 잘 되는지, 작은 규모에서 명확하게 검증한다. (지도교수 원칙: 화려한 대규모 실험보다 인과가 또렷한 소규모 검증 우선.)
 
-Two testbeds: a **multimodal** obstacle map (left/right detour → bimodal
-steps-to-go, `src/multimodal_env.py`) for the observation experiments, and the
-**standard** pointmass map (calibrated dynamics, room to improve) for the reward
-experiments. Predictors use bin_size=1 so E[STG] is calibrated in real steps.
+**보상 정의** (`src/reward.py`):
+- 기존(baseline, eq 1.1): `r = μ_t − μ_{t+1}`
+- 제안(ours, eq 1.2): `r = α·(μ_t − μ_{t+1}) + β·(σ²_t − σ²_{t+1})/σ²_t` (β=0이면 baseline과 완전히 동일)
 
-Reproduce any experiment: `python -m src.run_experiment --exp {e0,e1,e1b,e2,sweeps,e3}`.
+두 개의 테스트베드를 사용했다: **멀티모달 지도**(장애물 좌/우 우회 → 쌍봉 steps-to-go, `src/multimodal_env.py`)는 관찰 실험(E0/E1/E1b)에, **표준 pointmass 지도**(성능 개선 여지 확보)는 보상 실험(E2/E3)에 사용했다. 예측기는 bin_size=1로 학습해 E[STG]가 실제 스텝 단위로 보정되어 있다.
+
+재현: `python -m src.run_experiment --exp {e0,e1,e1b,e2,sweeps,e3}`
 
 ---
 
-## Results
+## 결과
 
-### E0 — bimodal distribution collapse ✅
-From the decision point the predicted steps-to-go distribution is **bimodal**
-(mass at the short-left ~41 and long-right ~46 routes, σ²≈5.2); once the agent
-commits to a side it **collapses to a single sharp mode** (σ²→0). Both routes
-verified. → *variance tracks commitment / uncertainty resolution.*
+### E0 — 쌍봉 분포 붕괴 ✅
 
-### E1 — three situations ✅
-| situation | μ behaviour | σ² behaviour |
+![멀티모달 지도와 쌍봉 히스토그램](e0_multimodal_map.png)
+
+*그림 1. 왼쪽: 장애물을 사이에 두고 왼쪽(파랑)·오른쪽(빨강) 우회 경로로 시연 데이터를 생성. 오른쪽: 두 경로의 실제 소요 스텝 히스토그램 — 왼쪽 평균 41.5, 오른쪽 평균 46.9로 뚜렷이 분리(간격 5.4스텝).*
+
+![분포 붕괴 스냅샷](observe/e0_collapse.png)
+
+*그림 2. 갈림길 시작 지점에서는 예측 분포가 41과 46 두 지점에 걸쳐 쌍봉(σ²≈5.2)을 이루다가, 에이전트가 한쪽으로 방향을 정하는 순간 즉시 단봉(σ²→0)으로 붕괴한다. 좌/우 경로 모두 동일한 패턴.*
+
+### E1 — 세 가지 상황에서의 분포 거동 ✅
+
+![세 상황 비교](observe/e1_situations.png)
+
+*그림 3. 좌: 목표 접근(성공) — μ, σ² 모두 0으로 감소. 중: 실패 직전(외력 교란) — σ²가 위기 순간마다 최대 571까지 급등. 우: 멀티모달 붕괴 — 쌍봉(step0) → 단봉(step23) → 목표(step46).*
+
+| 상황 | μ 거동 | σ² 거동 |
 |---|---|---|
-| goal approach (success) | ↓ to ~0 | ↓ to ~0 |
-| near failure (bias-perturbed) | stays high | **spikes to ~500** at the struggle steps |
-| multimodal collapse | ~flat then ↓ | ↓ (bimodal → unimodal) |
+| 목표 접근(성공) | 45 → 0 | 5 → 0 |
+| 실패 직전(외력 교란) | 계속 높음 | 위기마다 최대 571 |
+| 멀티모달 붕괴 | 완만히 감소 | 쌍봉 → 단봉 |
 
-→ *failure is marked by a variance spike; success by variance collapse.*
+### E1b — Δμ와 Δσ²의 독립성 (novelty 방어 핵심) ✅
 
-### E1b — Δμ vs Δσ² independence ✅ (novelty defense)
-Naive global Pearson **r = −0.91**, but this is a two-cluster artifact:
-- **certain steps** (σ²≤1, the majority): **r ≈ −0.02** — Δσ²≈0 while Δμ carries
-  the signal → the two are **independent**; variance is inert.
-- **uncertain steps** (~2%, the decision/failure region): Δσ² is large and Δμ can
-  reverse sign — variance fires exactly where the expectation is ambiguous.
+![Δμ vs Δσ² 산점도](observe/e1b_independence.png)
 
-→ *variance adds information rather than duplicating the expectation; it is
-active precisely in the states that matter.*
+*그림 4. 전체 1,844개 스텝의 산점도. 전역 상관계수 r=−0.91은 두 군집이 섞인 착시다: 전체의 약 98%를 차지하는 "확신 구간"(σ²≤1)에서는 r≈−0.02로 사실상 독립이고, 약 2%의 "결정/실패 구간"에서만 Δμ·Δσ²가 함께 크게 움직인다(r≈−0.48).*
 
-### E2 — baseline vs ours (main comparison) ⚠️ no robust improvement
-| condition | baseline (β=0) | ours | note |
+→ **분산은 기댓값이 이미 잘 작동하는 구간에서는 조용하고, 기댓값이 애매한 바로 그 순간에만 발화한다** — 즉 정보를 중복하는 게 아니라 추가한다.
+
+### E2 — baseline vs ours 메인 비교 ⚠️ 견고한 개선 없음
+
+![E2 학습 곡선](e2/e2_convergence.png)
+
+*그림 5. 6개 시드 평균±표준편차. 최종 성공률은 ours 0.947 > baseline 0.915(5/6 시드에서 우세, paired t=1.76)이나, 두 밴드가 대부분 구간에서 겹쳐 통계적으로 확정적이지 않다.*
+
+| 조건 | baseline | ours | 판정 |
 |---|---|---|---|
-| near-ceiling start (SR≈0.87) | 0.915 | **0.947** | +3pts, 5/6 seeds, paired t=1.76 (marginal) |
-| degraded start, β sweep | **0.844** | 0.796 (β=.5) / 0.818 (β=1) / 0.837 (β=2) | every β>0 on/below baseline, high seed variance |
+| 천장 근처 시작(SR≈0.87) | 0.915 | 0.947 | +3.2%p(약함) |
 
-Decision items: **2.1** change_rate (0.853) ≥ ratio (0.824) — change_rate slightly
-more stable. **2.2** eps ∈ {1e-6, 1e-3, 1e-1} all stable, **no NaN/divergence**.
-**2.3** no β beats β=0.
+### 결정 항목 스윕 (2.1 변형식 / 2.2 eps / 2.3 α:β) ⚠️ baseline을 못 넘음
 
-### E3 — policy improvement vs predictor quality ⚠️ consistent with E2
-| predictor (MAE) | baseline | ours | ours − base |
+![결정 항목 스윕](sweeps/sweeps.png)
+
+*그림 6. 정책을 일부러 무디게 만들어(시작 성공률 63%) 개선 여지를 키운 뒤 재검증. 좌: β를 0~2까지 훑어도 어떤 값도 baseline(점선, 0.844)을 확실히 넘지 못함(β=0.5는 오히려 최저 0.796). 중: 분산 변화율(change_rate, 0.853)이 분산 비율(ratio, 0.824)보다 소폭 안정적. 우: eps 1e-6~0.1 전 구간에서 NaN·발산 없음(수치적 안정성 확인).*
+
+### E3 — 예측기 품질별 비교 ⚠️ 역시 개선 없음
+
+![예측기 품질별 성공률](e3/e3_predictor_quality.png)
+
+*그림 7. 예측기 학습량 10/30/50/100%(MAE로 표시) 전 구간에서 baseline이 ours보다 높음.*
+
+| 예측기(MAE) | baseline | ours | 차이 |
 |---|---|---|---|
 | f=0.10 (20.07) | 0.774 | 0.739 | −0.034 |
 | f=0.30 (19.73) | 0.836 | 0.829 | −0.007 |
 | f=0.50 (19.71) | 0.832 | 0.759 | −0.073 |
 | f=1.00 (19.64) | 0.826 | 0.806 | −0.020 |
 
-Across all predictor qualities ours ≤ baseline. (Caveat: on the random-goal
-standard map the predictor MAE plateaus at ~20 across fractions, so the quality
-axis is narrow.)
+(참고: 표준 지도는 목표가 매번 랜덤이라 예측기 MAE가 fraction과 무관하게 ~20 근처에 정체 — 품질 축이 좁다는 한계가 있음)
 
 ---
 
-## Conclusion
+## 결론
 
-- **Variance is a real, distinct, failure-predictive signal** (E0/E1/E1b): it
-  collapses on commitment, spikes before failure, and is statistically
-  independent of the expectation in the common regime while activating in the
-  decision/failure states. This is the core novel finding and it is solid.
-- **But adding it to the REINFORCE reward does not robustly help** (E2/E3): at
-  this small scale the variance term neither reliably improves nor clearly harms
-  policy learning — the effect is within seed noise and often slightly negative
-  across β and predictor quality. This **empirically supports the advisor's own
-  caution** ("리워드에 요소 과다 통합 시 상충·자기부정") against over-integrating
-  signals into the reward.
-- **Implication / next step**: the value of the variance signal is in
-  **detection** — the E4 use case (μ-jump + σ²-rise as a failure / human-intervention
-  trigger, and data-quality assessment) — rather than as a policy-reward term.
-  A cleaner reward test would need a map where a *well-calibrated* predictor
-  (like the multimodal one, MAE≈0.15) coexists with genuine room to improve;
-  here the calibrated map was at ceiling and the improvable map had a weak
-  predictor.
+- **E0·E1·E1b는 견고한 긍정 결과다.** steps-to-go 분산은 실재하는 신호다 — 결정 순간에 붕괴하고, 실패 직전 급등하며, 대다수 구간에서 기댓값과 통계적으로 독립적이다. SI-EFM이 이 정보를 미활용한다는 문제의식은 데이터로 뒷받침된다.
+- **하지만 E2·E3는 정직한 무효과(null)다.** 이 신호를 REINFORCE 보상에 더해도 이 작은 규모에서는 baseline을 견고하게 이기지 못했다 — β 값, 예측기 품질을 바꿔도 마찬가지였다. 이는 회의록의 경고("리워드에 요소를 과하게 통합하면 상충·자기부정 발생")를 실험적으로 재현한 결과다.
+- **다음 방향**: 분산의 가치는 정책을 직접 바꾸는 보상 항이 아니라, "위험 순간"을 알려주는 **탐지·인간개입 트리거**(E4)에 있는 것으로 보인다. 보상 실험을 재시도하려면 잘 보정된 예측기(멀티모달 지도, MAE 0.15)와 개선 여지가 남은 정책이 **동시에** 존재하는 환경이 필요하다 — 이번엔 예측기가 정확한 지도는 정책이 이미 천장이었고, 개선 여지가 있는 지도는 예측기가 부정확했다.
 
-## Artifacts
-`results/observe/` (E0/E1/E1b), `results/e2/`, `results/sweeps/` (2.1–2.3),
-`results/e3/` — plots + CSV/JSON. Predictor checkpoints in `checkpoints/{mm,std}/`
-(gitignored, regenerable via `src/train_predictor.py`).
+## 산출물
+`results/observe/`(E0/E1/E1b), `results/e2/`, `results/sweeps/`(2.1–2.3), `results/e3/` — 플롯 + CSV/JSON. 예측기 체크포인트는 `checkpoints/{mm,std}/`(git 미추적, `src/train_predictor.py`로 재생성 가능).
