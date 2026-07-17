@@ -26,6 +26,16 @@ __temp__.mp4
 # 관찰 도구 산출물 (플롯 등, 재생성 가능)
 outputs/
 
-# phase 2 실험 산출물 (플롯/CSV, 재생성 가능) — 단 summary.md는 추적
+# 데모 데이터셋 (재생성 가능, ADR-002)
+data/
+
+# phase 2/3 실험 산출물 (플롯/CSV/영상, 재생성 가능) — 단 summary류 md는 추적
 results/*
 !results/summary.md
+!results/diag_multimodal/
+results/diag_multimodal/*
+!results/diag_multimodal/summary.md
+!results/diag_multimodal/mu_sigma_relationship.md
+!results/obstacle_env/
+results/obstacle_env/*
+!results/obstacle_env/summary.md
