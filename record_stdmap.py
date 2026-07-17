@@ -64,16 +64,19 @@ def main():
   ctrl_label = ('직선 주행 (PD→골)' if args.controller == 'straight'
                 else '학습된 BC 정책(구맵)')
 
-  fig = plt.figure(figsize=(13, 6.5), dpi=100)
-  gs = fig.add_gridspec(2, 2, width_ratios=[1.05, 1.0], hspace=0.35)
+  fig = plt.figure(figsize=(13, 7.2), dpi=100)
+  gs = fig.add_gridspec(3, 2, width_ratios=[1.05, 1.0], hspace=0.55)
   ax = fig.add_subplot(gs[:, 0])
   ax_dist = fig.add_subplot(gs[0, 1])
-  ax_ts = fig.add_subplot(gs[1, 1])
-  ax_ts2 = ax_ts.twinx()  # 1회만 생성
+  ax_e = fig.add_subplot(gs[1, 1])
+  ax_e2 = ax_e.twinx()    # 골까지 거리 축 (1회만 생성)
+  ax_var = fig.add_subplot(gs[2, 1])
 
   frames = []
   key = jax.random.PRNGKey(42)
   n_success = 0
+  corr_E = [[] for _ in probes]   # (E, dist) 쌍 축적 -> 최종 상관 출력
+  corr_D = []
 
   for episode in range(args.episodes):
     seed = args.seed + episode
@@ -108,16 +111,22 @@ def main():
       dist_lines.append(dl)
     ax_dist.legend(fontsize=8, loc='upper right')
 
-    ax_ts.clear(); ax_ts2.clear()
-    ax_ts.set_xlabel('step'); ax_ts.set_ylabel('E[STG] (실선)')
-    ax_ts2.set_ylabel('σ² (점선)')
+    ax_e.clear(); ax_e2.clear(); ax_var.clear()
+    ax_e.set_ylabel('E[STG]')
+    ax_e2.set_ylabel('골까지 거리', color='green')
+    ax_var.set_xlabel('step'); ax_var.set_ylabel('σ²')
     e_lines, v_lines = [], []
     for name, probe, color, _ in probes:
-      el, = ax_ts.plot([], [], color=color, lw=1.3, label=name)
-      vl, = ax_ts2.plot([], [], color=color, lw=1.1, ls=':')
+      el, = ax_e.plot([], [], color=color, lw=1.3, label=name)
+      vl, = ax_var.plot([], [], color=color, lw=1.1, ls=':')
       e_lines.append(el); v_lines.append(vl)
-    ax_ts.legend(fontsize=8, loc='upper right')
+    d_line, = ax_e2.plot([], [], color='green', lw=1.4, ls='--',
+                         label='골까지 거리')
+    ax_e.legend(fontsize=7, loc='upper right')
+    ax_e.set_title('E[STG] vs 골까지 거리(초록 파선) — 동조 여부 관찰',
+                   fontsize=9)
     hist = [([], []) for _ in probes]
+    dists_ep = []
 
     step = 0
     while (not env.success()) and step < args.max_steps:
@@ -149,7 +158,9 @@ def main():
       line.set_data(t[:, 0], t[:, 1])
       dot.set_data([t[-1, 0]], [t[-1, 1]])
       ymax = 0.02
-      info_parts = []
+      dist_to_goal = float(np.linalg.norm(env._cur_pos - env._goal_pos))
+      dists_ep.append(dist_to_goal)
+      info_parts = [f'거리={dist_to_goal:.2f}']
       for i, ((name, probe, color, _), rec) in enumerate(zip(probes, recs)):
         dist_lines[i].set_data(probe.bin_vals, rec.probs)
         ymax = max(ymax, float(rec.probs.max()))
@@ -160,14 +171,18 @@ def main():
         info_parts.append(f'{name}: E={rec.expectation:.1f} '
                           f'σ²={rec.variance:.0f}')
       ax_dist.set_ylim(0, ymax * 1.2)
-      ax_ts.relim(); ax_ts.autoscale_view()
-      ax_ts2.relim(); ax_ts2.autoscale_view()
+      d_line.set_data(range(len(dists_ep)), dists_ep)
+      for a in (ax_e, ax_e2, ax_var):
+        a.relim(); a.autoscale_view()
       ax.set_title(f'[{ctrl_label}] ep{episode} (seed {seed})  step {step}  '
                    f'성공 {n_success}/{episode}\n'
                    + '   |   '.join(info_parts), fontsize=9)
       frames.append(fig_to_frame(fig))
 
     n_success += int(env.success())
+    for i in range(len(probes)):
+      corr_E[i] += hist[i][0]
+    corr_D += dists_ep
     ax.set_title(f'[{ctrl_label}] ep{episode} 종료: '
                  f'{"성공" if env.success() else "실패"} ({step} steps)',
                  fontsize=11, fontweight='bold')
@@ -176,6 +191,12 @@ def main():
           f'{step} steps  (누적 프레임 {len(frames)})', flush=True)
 
   plt.close(fig)
+  from scipy import stats as _st
+  print('\n[E–거리 상관 (전체 스텝 풀링)]')
+  for i, (name, *_rest) in enumerate(probes):
+    r_s, _ = _st.spearmanr(corr_E[i], corr_D)
+    r_p, _ = _st.pearsonr(corr_E[i], corr_D)
+    print(f'  {name}: Spearman={r_s:.3f}  Pearson={r_p:.3f}')
   os.makedirs(os.path.dirname(args.out), exist_ok=True)
   out = _write_video(frames, args.out, fps=args.fps)
   print(f'저장: {out}  ({len(frames)} frames, 약 {len(frames) / args.fps:.0f}초)')
