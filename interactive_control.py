@@ -26,20 +26,81 @@ import jax
 
 from envs_enhanced import EnhancedPoint2D
 from stg_probe import STGProbe
+from pointmass_core import BOUNDS_X, BOUNDS_Y
 
+_WORLD_EXTENT = (BOUNDS_X[0], BOUNDS_X[1], BOUNDS_Y[0], BOUNDS_Y[1])
 
 # ------------------------------------------------------------------ frame draw
+_FLASH_WINDOW = 15   # frames the event banner + highlighted border stay visible
+_FLASH_LABELS = {
+    # plain text only: the Noto Sans CJK font covers Hangul but not emoji, so an
+    # emoji prefix here would render as a missing-glyph tofu box.
+    'teleport': '[순간이동]',
+    'add_obstacle': '[장애물 생성]',
+    'remove_obstacle': '[장애물 제거]',
+    'clear_obstacles': '[장애물 전체 제거]',
+}
+
+
 def _compose_frame(env, records, bin_vals, backend_plt):
-  """Render a single 2-panel RGB frame (env view | STG distribution + curves)."""
+  """Render a single 2-panel RGB frame (env view | STG distribution + curves).
+
+  The environment panel is drawn with `imshow(..., extent=_WORLD_EXTENT)` so the
+  raster from env.render() sits in the same [-1,1]x[-1,1] data coordinates as the
+  physics, letting us overlay exact-position markers on top of it: every teleport
+  in the episode gets a persistent 'from' marker (x), 'to' marker (star) and a
+  dashed connector, so it stays visible for the rest of the video, not just for
+  an instant. A flashing banner + highlighted border also calls out the
+  _FLASH_WINDOW frames right after any teleport/obstacle event."""
   plt = backend_plt
   fig = plt.figure(figsize=(11, 5))
   gs = fig.add_gridspec(2, 2, width_ratios=[1.0, 1.1], height_ratios=[2, 1])
 
+  cur_step = records[-1].step_idx if records else 0
+  recent_events = [(s, k, d) for s, k, d in env.intervention_log
+                   if k in _FLASH_LABELS and 0 <= cur_step - s < _FLASH_WINDOW]
+
   # left: environment
   ax_env = fig.add_subplot(gs[:, 0])
-  ax_env.imshow(env.render())
-  ax_env.axis('off')
+  ax_env.imshow(env.render(), extent=_WORLD_EXTENT, origin='upper')
+  ax_env.set_xlim(*_WORLD_EXTENT[:2]); ax_env.set_ylim(*_WORLD_EXTENT[2:])
+  ax_env.set_xticks([]); ax_env.set_yticks([])
   ax_env.set_title('environment')
+
+  # persistent markers for every teleport that has happened so far this episode
+  for s, kind, detail in env.intervention_log:
+    if kind != 'teleport' or s > cur_step:
+      continue
+    from_xy, to_xy, _ = detail
+    ax_env.plot([from_xy[0], to_xy[0]], [from_xy[1], to_xy[1]],
+                linestyle='--', color='darkorange', linewidth=2, zorder=7)
+    ax_env.scatter([from_xy[0]], [from_xy[1]], marker='x', s=140,
+                   color='darkorange', linewidths=3, zorder=8)
+    ax_env.scatter([to_xy[0]], [to_xy[1]], marker='*', s=260, color='gold',
+                   edgecolors='darkorange', linewidths=1.5, zorder=8)
+    ax_env.annotate(f'step {s}', xy=to_xy, xytext=(6, 6),
+                    textcoords='offset points', fontsize=9, color='darkorange',
+                    fontweight='bold')
+
+  if recent_events:
+    latest_step, latest_kind, latest_detail = recent_events[-1]
+    label = f'{_FLASH_LABELS[latest_kind]} (step {latest_step})'
+    if latest_kind == 'teleport':
+      from_xy, to_xy, _ = latest_detail
+      label += f'  ({from_xy[0]:.2f}, {from_xy[1]:.2f}) → ({to_xy[0]:.2f}, {to_xy[1]:.2f})'
+    elif latest_kind == 'add_obstacle':
+      _, center, radius = latest_detail
+      label += f'  center=({center[0]:.2f}, {center[1]:.2f}) r={radius:.2f}'
+    ax_env.set_title(f'environment  —  {label}', color='crimson', fontweight='bold')
+    for spine in ax_env.spines.values():
+      spine.set_visible(True); spine.set_edgecolor('crimson'); spine.set_linewidth(4)
+  status_bits = []
+  if getattr(env, '_bias_force', None) is not None:
+    bf = env._bias_force
+    status_bits.append(f'외력 ({bf[0]:.1e}, {bf[1]:.1e})')
+  if status_bits:
+    ax_env.text(0.5, -0.05, '  |  '.join(status_bits), transform=ax_env.transAxes,
+               ha='center', va='top', fontsize=10, color='dimgray')
 
   # right-top: current distribution
   ax_dist = fig.add_subplot(gs[0, 1])
@@ -84,6 +145,8 @@ def run_replay(checkpoint: str, replay_path: str, out_path: str,
   import matplotlib
   matplotlib.use('Agg')
   import matplotlib.pyplot as plt
+  plt.rcParams['font.family'] = ['Noto Sans CJK JP', 'DejaVu Sans']
+  plt.rcParams['axes.unicode_minus'] = False
 
   with open(replay_path) as fp:
     script = json.load(fp)
@@ -149,13 +212,14 @@ def run_replay(checkpoint: str, replay_path: str, out_path: str,
   return out_path
 
 
-def _write_video(frames: List[np.ndarray], out_path: str):
-  """mp4 via imageio-ffmpeg; falls back to gif (PIL) if encoding fails."""
+def _write_video(frames: List[np.ndarray], out_path: str, fps: int = 10):
+  """mp4 via imageio-ffmpeg; falls back to gif (PIL) if encoding fails.
+  Returns the actual output path (mp4, or the gif fallback)."""
   try:
     import imageio.v2 as imageio
     if out_path.lower().endswith('.mp4'):
-      imageio.mimsave(out_path, frames, fps=10, macro_block_size=None)
-      return
+      imageio.mimsave(out_path, frames, fps=fps, macro_block_size=None)
+      return out_path
   except Exception as e:  # pragma: no cover - depends on ffmpeg availability
     print(f'  mp4 encode failed ({e}); falling back to gif')
   from PIL import Image
@@ -164,12 +228,15 @@ def _write_video(frames: List[np.ndarray], out_path: str):
   imgs[0].save(gif_path, save_all=True, append_images=imgs[1:], duration=100,
                loop=0)
   print(f'  wrote {gif_path}')
+  return gif_path
 
 
 # --------------------------------------------------------------------- GUI
 def run_gui(checkpoint: str, action_scale: float, bias_force, obstacle_radius,
             out_dir: str, max_steps: int = 400):  # pragma: no cover - needs display
   import matplotlib.pyplot as plt
+  plt.rcParams['font.family'] = ['Noto Sans CJK JP', 'DejaVu Sans']
+  plt.rcParams['axes.unicode_minus'] = False
 
   probe = STGProbe(checkpoint)
   np.random.seed(int(time.time()) % 10000)
@@ -268,7 +335,7 @@ def _save_session(records, env, out_dir):  # pragma: no cover - GUI helper
   for step_idx, kind, detail in env.intervention_log:
     if kind == 'teleport':
       events.append({'step': step_idx, 'kind': 'teleport',
-                     'value': list(detail[0]), 'zero_velocity': detail[1]})
+                     'value': list(detail[1]), 'zero_velocity': detail[2]})
     elif kind == 'add_obstacle':
       events.append({'step': step_idx, 'kind': 'obstacle',
                      'center': list(detail[1]), 'radius': detail[2]})

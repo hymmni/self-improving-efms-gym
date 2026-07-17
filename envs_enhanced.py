@@ -20,6 +20,11 @@ from typing import List, NamedTuple, Optional, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+
+# Intervention labels/annotations are Korean; DejaVu Sans (matplotlib default)
+# has no Hangul glyphs and would render them as tofu boxes.
+plt.rcParams['font.family'] = ['Noto Sans CJK JP', 'DejaVu Sans']
+plt.rcParams['axes.unicode_minus'] = False
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 from pointmass_core import (
@@ -76,6 +81,9 @@ class EnhancedPoint2D(Point2D):
       self._bias_force = None
     else:
       self._bias_force = np.asarray(force, dtype=np.float32).copy()
+    self._intervention_log.append(
+        (self._step_count, 'bias_force',
+         None if force is None else tuple(float(x) for x in force)))
 
   # ------------------------------------------------------------------ obstacles
   def add_obstacle(self, center: np.ndarray, radius: float) -> int:
@@ -145,11 +153,12 @@ class EnhancedPoint2D(Point2D):
     # 1) pending teleport (before physics)
     if self._pending_teleport is not None:
       pos, zero_vel = self._pending_teleport
+      from_pos = self._cur_pos.copy()
       self._cur_pos = pos.copy()
       if zero_vel:
         self._cur_vel = np.zeros(2, dtype=np.float32)
       self._intervention_log.append(
-          (self._step_count, 'teleport', (tuple(pos), zero_vel)))
+          (self._step_count, 'teleport', (tuple(from_pos), tuple(pos), zero_vel)))
       self._cur_episode_traj.append(self._cur_pos.copy())
       self._pending_teleport = None
 
@@ -231,14 +240,24 @@ class EnhancedPoint2D(Point2D):
         edgecolor='green', linestyle='--', linewidth=4, fill=False)
     ax.add_patch(circle)
 
-    # bias force arrow (scaled for visibility)
+    # bias force arrow: fixed on-screen length in the bias direction (the raw
+    # vector is tiny -- e.g. 2e-5 -- and invisible at true scale, since it is
+    # added every physics substep and accumulates over the episode instead of
+    # being drawn to scale). The exact vector is printed as text so magnitude
+    # is never implied by the arrow's length.
     if self._bias_force is not None:
-      scale = 40.0
-      ax.arrow(cur_pos[0], cur_pos[1],
-               float(self._bias_force[0]) * scale,
-               float(self._bias_force[1]) * scale,
-               head_width=0.05, head_length=0.05, fc='purple', ec='purple',
-               linewidth=3)
+      norm = float(np.linalg.norm(self._bias_force))
+      if norm > 1e-12:
+        arrow_len = 0.22
+        dx = float(self._bias_force[0]) / norm * arrow_len
+        dy = float(self._bias_force[1]) / norm * arrow_len
+        ax.arrow(cur_pos[0], cur_pos[1], dx, dy,
+                 head_width=0.045, head_length=0.045, fc='purple',
+                 ec='purple', linewidth=3, zorder=6)
+        ax.text(0.02, 0.02,
+                f'외력: ({self._bias_force[0]:.1e}, {self._bias_force[1]:.1e})',
+                transform=ax.transAxes, fontsize=10, color='purple',
+                fontweight='bold', va='bottom')
 
     for spine in ax.spines.values():
       spine.set_linewidth(4)
