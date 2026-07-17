@@ -66,6 +66,14 @@ python record_obstacle.py --controller pf --episodes 5 --fps 15
 출력: `results/videos/obstacle_episodes.mp4` (`--out`으로 변경). 화면 구성은
 watch_obstacle.py와 동일, 에피소드 사이 1초 정지 프레임 삽입.
 
+### 구맵 — 구/신 예측기 겹침 mp4 녹화 (`record_stdmap.py`)
+```bash
+python record_stdmap.py                             # learned 주행 10 에피소드
+python record_stdmap.py --controller straight --episodes 5
+```
+출력: `results/videos/stdmap_both_predictors.mp4`. 파랑=구맵 예측기, 빨강=신맵
+예측기(가상 장애물 공급), 회색 세로선=14 step 눈금.
+
 ### 구맵 — 키보드 GUI / 리플레이 (`interactive_control.py`, phase 1)
 ```bash
 DISPLAY=:1 python interactive_control.py --checkpoint checkpoints/sft_state.pkl   # GUI
