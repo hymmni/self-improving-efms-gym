@@ -105,6 +105,21 @@ def detect_segments(varis, factor, smooth_w=5, hysteresis=0.75, min_gap=5):
   return filtered_b, high, filtered_e
 
 
+def refine_resolve_point(varis, boundary, window=8):
+  """임계값-교차 시점(boundary)은 '평소 수준 아래로 내려간 순간'일 뿐, 오늘
+  오전 확인한 '한 스텝 만의 급감(모드 구조 재편)' 그 자체와는 다를 수 있다.
+  boundary 근방(±window)에서 (원본, 비평활) σ²의 1스텝 하강폭이 가장 큰
+  지점을 찾아 '진짜 해소 순간'으로 정밀화한다."""
+  lo = max(0, boundary - window)
+  hi = min(len(varis), boundary + window)
+  seg = np.asarray(varis[lo:hi], dtype=np.float64)
+  if len(seg) < 2:
+    return boundary
+  diffs = np.diff(seg)  # diffs[i] = seg[i+1]-seg[i]; 가장 음수인 지점이 급감
+  i = int(np.argmin(diffs))
+  return lo + i + 1
+
+
 def main():
   ap = argparse.ArgumentParser()
   ap.add_argument('--checkpoint', default=CKPT)

@@ -40,7 +40,7 @@ plt.rcParams['axes.unicode_minus'] = False
 from pointmass_core import build_continuous_act_discrete_dist_v0
 from src.obstacle_env import ObstacleAvoidPoint2D
 from src.probe_generic import GenericSTGProbe
-from src.skill_chaining_detect import detect_segments
+from src.skill_chaining_detect import detect_segments, refine_resolve_point
 from src.train_obstacle_predictor import OBS_FIELDS, concat_obs
 
 CKPT_MAIN = 'checkpoints/obstacle/predictor.pkl'
@@ -77,11 +77,12 @@ def rollout_full(probe, seed, max_steps=300):
 
 # --------------------------------------------------------- hindsight dataset
 def build_dataset(probe, n_episodes, seed0, factor, hysteresis, smooth,
-                  min_gap, max_steps=300):
+                  min_gap, max_steps=300, refine=True, refine_window=8):
   obs_lists = {k: [] for k in OBS_FIELDS}
   labels = []
   ep_ids = []
   n_forks = 0
+  shifts = []  # 정밀화로 경계가 원래 지점에서 얼마나 이동했는지(진단용)
   for k in range(n_episodes):
     pos, varis, obs_list, obst, goal, succ = rollout_full(
         probe, seed0 + k, max_steps)
@@ -90,12 +91,22 @@ def build_dataset(probe, n_episodes, seed0, factor, hysteresis, smooth,
     boundaries, _, entries = detect_segments(varis, factor, smooth,
                                               hysteresis, min_gap)
     for entry, resolve in zip(entries, boundaries):
+      if refine:
+        resolve_r = refine_resolve_point(varis, resolve, refine_window)
+        resolve_r = max(resolve_r, entry + 1)  # entry보다 앞으로 못 감
+        shifts.append(resolve_r - resolve)
+        resolve = resolve_r
       n_forks += 1
       for t in range(entry, resolve):
         for f in OBS_FIELDS:
           obs_lists[f].append(obs_list[t][f])
         labels.append(resolve - t)  # 원본 time_to_success와 동일한 방식
         ep_ids.append(k)
+  if refine and shifts:
+    shifts = np.array(shifts)
+    print(f'경계 정밀화: 평균 이동 {shifts.mean():+.1f} step '
+          f'(표준편차 {shifts.std():.1f}, |이동|>=1인 비율 '
+          f'{(np.abs(shifts) >= 1).mean():.0%})')
 
   data = dict(
       observation={f: np.stack(v).astype(np.float32)
@@ -176,6 +187,8 @@ def demo_figure(probe, aux_params, aux_nets, bin_vals, out_path, seeds,
     pos, varis, obs_list, obst, goal, succ = rollout_full(probe, seed, max_steps)
     boundaries, thresh, entries = detect_segments(
         varis, factor, smooth, hysteresis, min_gap)
+    boundaries = [max(refine_resolve_point(varis, b), e + 1)
+                 for b, e in zip(boundaries, entries)]
     T = len(obs_list)
     concats = np.asarray(concat_obs({f: np.stack([o[f] for o in obs_list])
                                      for f in OBS_FIELDS}))
