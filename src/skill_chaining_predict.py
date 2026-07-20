@@ -237,7 +237,11 @@ def main():
 
   probe = GenericSTGProbe(args.checkpoint)
 
-  data_path = 'data/skill_boundary_hindsight.pkl'
+  # 체크포인트 종류(노이즈/깨끗함)별로 사후 라벨 데이터셋·보조헤드 경로를 분리
+  # -- 안 그러면 서로 다른 --checkpoint 실행이 같은 파일을 덮어쓴다.
+  suffix = '_clean' if 'clean' in args.checkpoint else ''
+  data_path = f'data/skill_boundary_hindsight{suffix}.pkl'
+  ckpt_aux = f'checkpoints/obstacle{suffix}/skill_boundary_predictor.pkl'
   if os.path.exists(data_path):
     print(f'기존 사후 라벨 데이터셋 재사용: {data_path}')
     with open(data_path, 'rb') as fp:
@@ -258,11 +262,11 @@ def main():
       data, args.steps, args.batch, args.lr, args.seed, max_label)
   print(f'\n최종 val MAE: {val_mae:.2f} (라벨 범위 0~{max_label})')
 
-  os.makedirs(os.path.dirname(CKPT_AUX), exist_ok=True)
-  with open(CKPT_AUX, 'wb') as fp:
+  os.makedirs(os.path.dirname(ckpt_aux), exist_ok=True)
+  with open(ckpt_aux, 'wb') as fp:
     pickle.dump({'params': jax.device_get(params), 'max_label': max_label,
                 'val_mae': val_mae}, fp)
-  print(f'보조 헤드 체크포인트 저장: {CKPT_AUX}')
+  print(f'보조 헤드 체크포인트 저장: {ckpt_aux}')
 
   demo_figure(probe, params, nets, bin_vals, args.out,
              seeds=[1, 2, 5, 8], factor=args.factor,

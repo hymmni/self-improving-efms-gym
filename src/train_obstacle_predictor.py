@@ -37,7 +37,7 @@ from pointmass_core import (
     build_continuous_act_discrete_dist_v0,
     build_discrete_distance_converter,
 )
-from src.obstacle_env import ObstacleAvoidPoint2D, demo_action_pf
+from src.obstacle_env import ObstacleAvoidPoint2D, demo_action_pf, demo_action
 
 OBS_FIELDS = ('cur_pos', 'cur_vel', 'goal_pos', 'obstacle_rel_pos',
               'obstacle_radius')
@@ -50,7 +50,13 @@ CKPT_PATH = 'checkpoints/obstacle/predictor.pkl'
 
 
 # ------------------------------------------------------------------ dataset
-def generate_demos(num_episodes, seed0=3000, noise_std=1.5e-4):
+def generate_demos(num_episodes, seed0=3000, noise_std=1.5e-4, action_fn=None):
+  """action_fn(obs)->action. 기본(None)이면 기존 노이즈 PF 컨트롤러.
+  action_fn=demo_action(접선점 조준)을 넘기면 노이즈 없는 '깔끔한' 데모가 된다
+  (2026-07-20: 노이즈가 태스크 무관 불확실성을 얼마나 만드는지 분리하기 위한
+  대조군 — --controller tangent)."""
+  if action_fn is None:
+    action_fn = lambda obs: demo_action_pf(obs, noise_std=noise_std)
   obs_lists = {k: [] for k in OBS_FIELDS}
   acts, ttgs, ep_ids = [], [], []
   n_discard = 0
@@ -65,7 +71,7 @@ def generate_demos(num_episodes, seed0=3000, noise_std=1.5e-4):
     ep_obs, ep_act = [], []
     step = 0
     while not env.success() and step < EP_CAP:
-      act = demo_action_pf(ts.observation, noise_std=noise_std)
+      act = action_fn(ts.observation)
       ep_obs.append(ts.observation)
       ep_act.append(np.asarray(act, dtype=np.float32))
       ts = env.step(act)
@@ -161,19 +167,27 @@ def main():
   ap.add_argument('--lr', type=float, default=3e-4)
   ap.add_argument('--seed', type=int, default=0)
   ap.add_argument('--eval-episodes', type=int, default=100)
+  ap.add_argument('--controller', choices=['pf', 'tangent'], default='pf',
+                  help='pf=노이즈 PF(기존 채택값), tangent=노이즈 없는 접선점'
+                       ' 조준(대조군, data/ckpt에 _clean 접미사)')
   args = ap.parse_args()
 
+  suffix = '' if args.controller == 'pf' else '_clean'
+  data_path = f'data/obstacle_demos{suffix}.pkl'
+  ckpt_path = f'checkpoints/obstacle{suffix}/predictor.pkl'
+  action_fn = None if args.controller == 'pf' else (lambda obs: demo_action(obs))
+
   # ---- 1) 데이터 (있으면 재사용)
-  if os.path.exists(DATA_PATH):
-    print(f'기존 데이터셋 사용: {DATA_PATH}')
-    with open(DATA_PATH, 'rb') as fp:
+  if os.path.exists(data_path):
+    print(f'기존 데이터셋 사용: {data_path}')
+    with open(data_path, 'rb') as fp:
       data = pickle.load(fp)
   else:
-    data = generate_demos(args.episodes)
-    os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
-    with open(DATA_PATH, 'wb') as fp:
+    data = generate_demos(args.episodes, action_fn=action_fn)
+    os.makedirs(os.path.dirname(data_path), exist_ok=True)
+    with open(data_path, 'wb') as fp:
       pickle.dump(data, fp)
-    print(f'저장: {DATA_PATH}')
+    print(f'저장: {data_path}')
   N = len(data['action'])
   lengths = np.bincount(data['episode_id'])
   print(f'transitions={N}  ep길이 p50={np.percentile(lengths,50):.0f} '
@@ -280,16 +294,18 @@ def main():
         f'val MAE={float(mae):.2f} NLL={float(nll):.3f}')
 
   # ---- 5) 체크포인트
-  os.makedirs(os.path.dirname(CKPT_PATH), exist_ok=True)
-  with open(CKPT_PATH, 'wb') as fp:
+  os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
+  with open(ckpt_path, 'wb') as fp:
     pickle.dump({
         'params': jax.device_get(state.params),
         'norm_stats': stats,
         'dc_config': {'min_distance': 0, 'max_distance': MAX_DISTANCE,
                       'num_bins': NUM_BINS},
         'obs_fields': list(OBS_FIELDS),
+        'obs_dim': int(tr_obs.shape[-1]),
         'meta': {
-            'env': 'ObstacleAvoidPoint2D', 'noise_std': 1.5e-4,
+            'env': 'ObstacleAvoidPoint2D', 'controller': args.controller,
+            'noise_std': (0.0 if args.controller == 'tangent' else 1.5e-4),
             'episodes': args.episodes, 'steps': args.steps,
             'seed': args.seed,
             'val_mae': float(mae), 'val_nll': float(nll),
@@ -297,7 +313,7 @@ def main():
             'created_at': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
         },
     }, fp)
-  print(f'체크포인트 저장: {CKPT_PATH}')
+  print(f'체크포인트 저장: {ckpt_path}')
 
 
 if __name__ == '__main__':
