@@ -34,7 +34,10 @@ class GenericSTGProbe:
     with open(checkpoint_path, 'rb') as fp:
       ck = pickle.load(fp)
     self.obs_fields = tuple(ck.get('obs_fields', _DEFAULT_FIELDS))
-    obs_dim = sum(_FIELD_DIMS[f] for f in self.obs_fields)
+    # 'obs_dim'을 우선 사용 -- 장애물 개수 등으로 필드 차원이 바뀌는 체크포인트
+    # (예: 2-장애물 obstacle_rel_pos=4)에서 고정 _FIELD_DIMS 표가 틀릴 수 있음.
+    # 없는 구 체크포인트는 기존처럼 필드명 기반 합으로 폴백.
+    obs_dim = ck.get('obs_dim') or sum(_FIELD_DIMS[f] for f in self.obs_fields)
 
     dc_cfg = ck['dc_config']
     self.dc = build_discrete_distance_converter(
