@@ -28,6 +28,14 @@ DISPLAY=:1 python watch_obstacle.py --controller tangent   # 접선점 조준 (�
 | `--max-steps` | 500 | 에피소드 상한 |
 | `--dist-xmax` | 300 | 분포 패널 x축 상한 |
 
+### 신맵 — 스킬 체이닝 경계 검출 mp4 녹화 (`record_skill_chaining.py`)
+```bash
+python record_skill_chaining.py                      # 학습된 정책 6 에피소드
+python record_skill_chaining.py --episodes 5 --seed0 20
+```
+출력: `results/videos/skill_chaining.mp4`. 궤적이 검출된 스킬 경계마다 색이
+바뀌고, σ² 패널에 임계값(점선)·경계(빨강 세로선)가 도달 시점에 나타남.
+
 ### 신맵 — 마우스 수동 조종 (`drive_obstacle.py`)
 마우스 커서가 "당근"이 되어 에이전트를 끌고 다닌다. 시간 제한 없음.
 분포 패널은 항상 **진짜 골** 기준 — 골 반대편으로 끌고 가며 분포 반응 실험 가능.
