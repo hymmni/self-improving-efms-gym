@@ -83,21 +83,26 @@ def detect_segments(varis, factor, smooth_w=5, hysteresis=0.75, min_gap=5):
   low = high * hysteresis
 
   state = s[0] > high
-  boundaries = []
+  entry_step = 0 if state else None
+  boundaries, entries = [], []
   for t in range(1, len(s)):
     if state and s[t] < low:
       boundaries.append(t)
+      entries.append(entry_step if entry_step is not None else 0)
       state = False
+      entry_step = None
     elif not state and s[t] > high:
       state = True
-  # 너무 짧은 구간(직전 경계와 min_gap 미만) 제거
-  filtered = []
+      entry_step = t
+  # 너무 짧은 구간(직전 경계와 min_gap 미만) 제거 (entries도 짝 맞춰 필터)
+  filtered_b, filtered_e = [], []
   last = 0
-  for b in boundaries:
+  for b, e in zip(boundaries, entries):
     if b - last >= min_gap:
-      filtered.append(b)
+      filtered_b.append(b)
+      filtered_e.append(e)
       last = b
-  return filtered, high
+  return filtered_b, high, filtered_e
 
 
 def main():
@@ -122,8 +127,8 @@ def main():
     pos, varis, obst, goal, succ = rollout(probe, args.seed0 + k)
     if len(pos) < 10:
       continue
-    boundaries, thresh = detect_segments(varis, args.factor, args.smooth,
-                                         args.hysteresis, args.min_gap)
+    boundaries, thresh, _entries = detect_segments(
+        varis, args.factor, args.smooth, args.hysteresis, args.min_gap)
     episodes.append(dict(pos=pos, varis=varis, obst=obst, goal=goal,
                          succ=succ, boundaries=boundaries, thresh=thresh,
                          seed=args.seed0 + k))
