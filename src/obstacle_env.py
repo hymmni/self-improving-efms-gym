@@ -218,6 +218,209 @@ def demo_action_pf(obs: dict, noise_std=1.5e-4) -> np.ndarray:
                              noise_std=noise_std)
 
 
+# ============================================================= 2-obstacle env
+# 2026-07-20 추가: "장애물 2개일 때도 불확실성이 진짜 갈림길에만 반응하는가"
+# (예: 두 장애물 사이 좁은 문/게이트) 검증용. 1-obstacle 클래스/체크포인트는
+# 건드리지 않고 그대로 additive하게 새 클래스로 추가한다.
+class TwoObstacleAvoidPoint2D(EnhancedPoint2D):
+  """랜덤 시작/골 + 장애물 항상 2개. 확률 gate_prob로 둘을 마주보게 배치해
+  '통과해야 하는 문(게이트)' 형태를 의도적으로 섞는다."""
+
+  def __init__(self,
+               radius_range=(0.08, 0.20),
+               path_frac_range=(0.30, 0.70),
+               perp_jitter_frac=0.5,
+               min_start_goal_dist=0.6,
+               min_wall_gap=0.25,
+               gate_prob=0.4,
+               gate_radius_range=(0.08, 0.15),
+               gate_gap_range=(0.18, 0.35)):
+    super().__init__()
+    self._radius_range = radius_range
+    self._path_frac_range = path_frac_range
+    self._perp_jitter_frac = perp_jitter_frac
+    self._min_start_goal_dist = min_start_goal_dist
+    self._min_wall_gap = min_wall_gap
+    self._gate_prob = gate_prob
+    self._gate_radius_range = gate_radius_range
+    self._gate_gap_range = gate_gap_range  # 두 원 표면 사이 간격(통과 폭)
+    self._cur_obstacles: list = []  # [(center(2,), radius), (center, radius)]
+
+  # ------------------------------------------------------------------ reset
+  def reset(self):
+    ts = super().reset()
+    while (np.linalg.norm(self._cur_pos - self._goal_pos)
+           < self._min_start_goal_dist):
+      ts = super().reset()
+
+    self._obstacles = {}
+    if np.random.uniform() < self._gate_prob:
+      self._place_gate()
+    else:
+      self._place_two_independent()
+    return ts._replace(observation=self._augment(ts.observation))
+
+  def _wall_gap(self, center, radius):
+    return min(center[0] - BOUNDS_X[0], BOUNDS_X[1] - center[0],
+              center[1] - BOUNDS_Y[0], BOUNDS_Y[1] - center[1]) - radius
+
+  def _valid_obstacle(self, center, radius, others):
+    start, goal = self._cur_pos, self._goal_pos
+    if np.linalg.norm(center - start) <= radius + 0.05:
+      return False
+    if np.linalg.norm(center - goal) <= radius + self._success_radius + 0.05:
+      return False
+    if self._wall_gap(center, radius) < self._min_wall_gap:
+      return False
+    for oc, orad in others:
+      if np.linalg.norm(center - oc) < radius + orad + 0.10:  # 서로 안 겹침
+        return False
+    return True
+
+  def _place_two_independent(self):
+    """1-obstacle 배치 로직(ObstacleAvoidPoint2D._place_obstacle)을 두 번
+    반복하되, 서로 겹치지 않도록 상호 거리도 확인한다."""
+    start, goal = self._cur_pos, self._goal_pos
+    seg = goal - start
+    seg_len = float(np.linalg.norm(seg))
+    direction = seg / seg_len
+    perp = np.array([-direction[1], direction[0]], dtype=np.float32)
+
+    placed = []
+    for _ in range(2):
+      radius = float(np.random.uniform(*self._radius_range))
+      for _ in range(20):
+        frac = float(np.random.uniform(*self._path_frac_range))
+        offset = (float(np.random.uniform(-1.0, 1.0))
+                 * self._perp_jitter_frac * radius)
+        center = (start + frac * seg + offset * perp).astype(np.float32)
+        if self._valid_obstacle(center, radius, placed):
+          break
+        radius *= 0.8
+      placed.append((center, radius))
+    self._cur_obstacles = placed
+    for c, r in placed:
+      self.add_obstacle(c, r)
+
+  def _place_gate(self):
+    """직선 경로 위 한 지점에서 좌우로 원 두 개를 마주보게 배치해, 그 틈을
+    통과해야 하는 '문' 형태를 만든다. 통과 폭(gap)은 표면 기준으로 고정."""
+    start, goal = self._cur_pos, self._goal_pos
+    seg = goal - start
+    seg_len = float(np.linalg.norm(seg))
+    direction = seg / seg_len
+    perp = np.array([-direction[1], direction[0]], dtype=np.float32)
+
+    for _ in range(20):
+      frac = float(np.random.uniform(*self._path_frac_range))
+      point = start + frac * seg
+      r0 = float(np.random.uniform(*self._gate_radius_range))
+      r1 = float(np.random.uniform(*self._gate_radius_range))
+      gap = float(np.random.uniform(*self._gate_gap_range))
+      off0 = r0 + gap / 2.0
+      off1 = r1 + gap / 2.0
+      c0 = (point + off0 * perp).astype(np.float32)
+      c1 = (point - off1 * perp).astype(np.float32)
+      if (self._valid_obstacle(c0, r0, [(c1, r1)]) and
+          self._valid_obstacle(c1, r1, [(c0, r0)])):
+        self._cur_obstacles = [(c0, r0), (c1, r1)]
+        self.add_obstacle(c0, r0)
+        self.add_obstacle(c1, r1)
+        return
+    # 20회 안에 못 만들면(맵 구석 등) 독립 배치로 폴백
+    self._place_two_independent()
+
+  # ------------------------------------------------------------------ obs
+  def _augment(self, obs: dict) -> dict:
+    """장애물을 배치 시점에 정해진 순서 그대로 관측에 담는다(에피소드 내내
+    고정, 매 스텝 재정렬하지 않음).
+
+    2026-07-20 수정: 원래는 매 스텝 '현재 위치 기준 가까운 순'으로 재정렬
+    했었는데, 두 장애물이 마주보는 게이트 장면에서 에이전트가 등거리선을
+    지날 때마다 슬롯 배정이 뒤바뀌어 물리와 무관한 인위적 불연속을
+    만드는 게 실측으로 확인됐다(장애물에서 먼 지점에서도 그 등거리선을
+    넘는 순간 σ²가 튀었음 — 정렬 아티팩트였지 진짜 불확실성 신호가
+    아니었다). 배치 시점에 고정하면 한 에피소드 안에서는 슬롯이 절대
+    안 바뀌므로 이 불연속이 사라진다.
+    """
+    obs = dict(obs)
+    pos = self._cur_pos
+    rel = np.concatenate([(c - pos).astype(np.float32)
+                          for c, _ in self._cur_obstacles])
+    radii = np.array([r for _, r in self._cur_obstacles], dtype=np.float32)
+    obs['obstacle_rel_pos'] = rel      # (4,) = [dx0,dy0,dx1,dy1]
+    obs['obstacle_radius'] = radii     # (2,)
+    return obs
+
+  def _resolve_obstacle_collisions(self) -> None:
+    super()._resolve_obstacle_collisions()
+    for axis, (lo, hi) in enumerate([BOUNDS_X, BOUNDS_Y]):
+      if self._cur_pos[axis] < lo:
+        self._cur_pos[axis] = lo
+        self._cur_vel[axis] = 0.0
+      elif self._cur_pos[axis] > hi:
+        self._cur_pos[axis] = hi
+        self._cur_vel[axis] = 0.0
+
+  def step(self, action):
+    ts = super().step(action)
+    return ts._replace(observation=self._augment(ts.observation))
+
+  def observation_spec(self):
+    spec = dict(super().observation_spec())
+    spec['obstacle_rel_pos'] = specs.Array((4,), dtype=np.float32)
+    spec['obstacle_radius'] = specs.Array((2,), dtype=np.float32)
+    return spec
+
+
+def avoid_controller_pf_two(cur_pos, cur_vel, goal_pos, obstacle_rel_pos,
+                            obstacle_radius,
+                            k_rep=4e-4, influence_margin=0.30, k_tan=1.5,
+                            noise_std=1.5e-4, min_margin=0.04):
+  """avoid_controller_pf를 장애물 2개에 대해 합산 적용.
+
+  게이트(두 장애물이 마주보는 좁은 틈)에서 두 영향권(각 0.30)이 겹치면 양쪽
+  반발+접선 힘이 동시에 발동해 서로 부딪혀 제자리에서 엉키는 교착이
+  실측됐다(단일 장애물 정면 교착과 같은 종류). 해법: 각 장애물의 유효
+  영향권을 '다른 장애물 표면까지 남은 간격의 절반'으로 자동 제한한다 —
+  틈이 넓으면 원래 margin 그대로, 좁으면 둘 다 줄어들어 한쪽씩만 우세하게
+  작동하거나 약하게라도 공존한다.
+  """
+  act = pd_controller(cur_pos, cur_vel, goal_pos)
+  rel = np.asarray(obstacle_rel_pos, dtype=np.float32).reshape(2, 2)
+  radii = np.asarray(obstacle_radius, dtype=np.float32).reshape(2)
+
+  centers = np.asarray(cur_pos, dtype=np.float32) + rel  # (2,2) 절대좌표
+  gap_between = (float(np.linalg.norm(centers[0] - centers[1]))
+                - radii[0] - radii[1])
+  eff_margin = min(influence_margin, max(min_margin, gap_between / 2.0))
+
+  for i in range(2):
+    d_vec = -rel[i]  # 장애물중심 -> 나
+    dist = float(np.linalg.norm(d_vec))
+    radius = float(radii[i])
+    gap = dist - radius
+    if dist > 1e-8 and gap < eff_margin:
+      radial = d_vec / dist
+      ramp = 1.0 - max(gap, 0.0) / eff_margin
+      to_goal = np.asarray(goal_pos, dtype=np.float32) - (
+          np.asarray(cur_pos, dtype=np.float32) + rel[i])
+      side = float(np.sign(to_goal[0] * d_vec[1] - to_goal[1] * d_vec[0])) \
+          or 1.0
+      tangential = np.array([-radial[1], radial[0]], dtype=np.float32) * side
+      act = act + k_rep * ramp * (radial + k_tan * tangential)
+
+  if noise_std > 0:
+    act = act + np.random.normal(0.0, noise_std, size=2).astype(np.float32)
+  return act
+
+
+def demo_action_pf_two(obs: dict, noise_std=1.5e-4) -> np.ndarray:
+  return avoid_controller_pf_two(obs['cur_pos'], obs['cur_vel'],
+                                 obs['goal_pos'], obs['obstacle_rel_pos'],
+                                 obs['obstacle_radius'], noise_std=noise_std)
+
+
 # ------------------------------------------------------------------ demo viz
 def _render_demo_grid(action_fn, title, out_path,
                       n_episodes=8, max_steps=300, seed0=0):
@@ -248,6 +451,55 @@ def _render_demo_grid(action_fn, title, out_path,
     straight = np.linalg.norm(traj[0] - env._goal_pos)
     ax.add_patch(patches.Circle(center, radius, facecolor='gray',
                                 edgecolor='black', alpha=0.5))
+    ax.plot(traj[:, 0], traj[:, 1], '.-', color='blue', ms=3, lw=1)
+    ax.scatter(*traj[0], marker='s', s=70, color='green', zorder=5, label='시작')
+    ax.scatter(*env._goal_pos, marker='*', s=160, color='orange', zorder=5,
+               label='골')
+    ax.add_patch(patches.Circle(env._goal_pos, env._success_radius,
+                                edgecolor='green', ls='--', fill=False))
+    ax.set_xlim(-1, 1); ax.set_ylim(-1, 1); ax.set_aspect('equal')
+    ax.set_title(f'seed {seed0 + k}: {step} steps '
+                 f'(직선거리 {straight:.2f}, 성공={env.success()})', fontsize=10)
+    if k == 0:
+      ax.legend(fontsize=8, loc='lower left')
+  fig.suptitle(title, fontsize=14)
+  fig.tight_layout()
+  os.makedirs(os.path.dirname(out_path), exist_ok=True)
+  fig.savefig(out_path, dpi=120)
+  plt.close(fig)
+  print(f'{title}\n  에피소드 길이: {lengths}  ->  {out_path}')
+  return lengths
+
+
+def _render_demo_grid_two(action_fn, title, out_path,
+                          n_episodes=8, max_steps=500, seed0=0):
+  import os
+  import matplotlib
+  matplotlib.use('Agg')
+  import matplotlib.pyplot as plt
+  import matplotlib.patches as patches
+  plt.rcParams['font.family'] = ['Noto Sans CJK JP', 'DejaVu Sans']
+  plt.rcParams['axes.unicode_minus'] = False
+
+  fig, axes = plt.subplots(2, 4, figsize=(18, 9))
+  lengths = []
+  for k, ax in enumerate(axes.flat):
+    np.random.seed(seed0 + k)
+    env = TwoObstacleAvoidPoint2D()
+    ts = env.reset()
+    traj = [env._cur_pos.copy()]
+    step = 0
+    while not env.success() and step < max_steps:
+      ts = env.step(action_fn(ts.observation))
+      traj.append(env._cur_pos.copy())
+      step += 1
+    traj = np.array(traj)
+    lengths.append(step)
+
+    straight = np.linalg.norm(traj[0] - env._goal_pos)
+    for c, r in env._cur_obstacles:
+      ax.add_patch(patches.Circle(c, r, facecolor='gray', edgecolor='black',
+                                  alpha=0.5))
     ax.plot(traj[:, 0], traj[:, 1], '.-', color='blue', ms=3, lw=1)
     ax.scatter(*traj[0], marker='s', s=70, color='green', zorder=5, label='시작')
     ax.scatter(*env._goal_pos, marker='*', s=160, color='orange', zorder=5,
