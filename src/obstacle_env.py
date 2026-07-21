@@ -206,6 +206,68 @@ def avoid_controller_pf(cur_pos, cur_vel, goal_pos, obstacle_rel_pos,
   return act
 
 
+# ADDED 2026-07-21 (additive; avoid_controller는 그대로 유지)
+def avoid_controller_committed(cur_pos, cur_vel, goal_pos, obstacle_rel_pos,
+                               obstacle_radius, side, clearance=0.12,
+                               angle_jitter=0.0):
+  """avoid_controller와 동일하되, 우회 방향을 관측(perp 부호)으로 정하지 않고
+  **에피소드 시작에 외부에서 정해진 side(+1/-1)로 고정**한다.
+
+  왜 필요한가 (2026-07-21 실측 근거):
+  (1) 원본 avoid_controller는 perp≈0 능선에서 sign이 불연속으로 뒤집혀 퇴화한다.
+      노이즈 0으로 굴리면 그 근방에서 100~130스텝씩 기어갔다(재롤아웃 실측:
+      노이즈를 넣으면 오히려 중앙값 49~57로 빨라짐). 방향을 미리 커밋하면
+      이 불안정이 사라진다.
+  (2) 더 중요하게, 원본은 전체 관측의 결정론적 함수라 p(a|s)가 구성상 단봉이다.
+      side를 관측에 없는 난수로 두면 같은 관측에 좌·우 액션이 공존해
+      **진짜 within-state 다봉성**이 생긴다(믹스처 헤드/다봉 탐지 검증용).
+      단, cur_vel이 관측에 있으므로 몇 스텝 뒤엔 속도가 선택을 드러내
+      애매함은 에피소드 극초반에만 존재한다(의도된 성질).
+
+  angle_jitter>0이면 접선 방향을 ±jitter(라디안) 내에서 흔들어 각 모드 안에
+  자연스러운 폭을 준다(모드 자체는 side로 이진 분리 유지).
+  """
+  pos = np.asarray(cur_pos, dtype=np.float32)
+  goal = np.asarray(goal_pos, dtype=np.float32)
+  rel = np.asarray(obstacle_rel_pos, dtype=np.float32)
+  d = float(np.linalg.norm(rel))
+  radius = float(np.asarray(obstacle_radius).reshape(-1)[0])
+  R = radius + clearance
+
+  to_goal = goal - pos
+  L = float(np.linalg.norm(to_goal))
+  if L < 1e-8:
+    return pd_controller(pos, cur_vel, goal)
+
+  if d <= R:
+    out = -rel / max(d, 1e-8)
+    return pd_controller(pos, cur_vel, pos + out * (R - d + 0.15))
+
+  u = to_goal / L
+  proj = float(np.dot(rel, u))
+  perp = float(u[0] * rel[1] - u[1] * rel[0])
+  blocking = (0.0 < proj < L) and (abs(perp) < R)
+  if not blocking:
+    return pd_controller(pos, cur_vel, goal)
+
+  theta = float(np.arcsin(min(R / d, 1.0)))
+  if angle_jitter > 0.0:
+    theta = float(np.clip(theta + np.random.uniform(-angle_jitter, angle_jitter),
+                          0.0, np.pi / 2))
+  # 원본과 달리 perp 부호를 쓰지 않고 주어진 side로 고정
+  tangent_dir = _rot(rel / d, float(side) * theta)
+  tangent_len = float(np.sqrt(max(d * d - R * R, 1e-6)))
+  subgoal = pos + tangent_dir * tangent_len
+  return pd_controller(pos, cur_vel, subgoal)
+
+
+def demo_action_committed(obs: dict, side, angle_jitter=0.0) -> np.ndarray:
+  return avoid_controller_committed(
+      obs['cur_pos'], obs['cur_vel'], obs['goal_pos'],
+      obs['obstacle_rel_pos'], obs['obstacle_radius'],
+      side=side, angle_jitter=angle_jitter)
+
+
 def demo_action(obs: dict) -> np.ndarray:
   """관측 dict를 받아 데모 액션을 내는 편의 래퍼 (데이터 생성/프로브용)."""
   return avoid_controller(obs['cur_pos'], obs['cur_vel'], obs['goal_pos'],
@@ -528,3 +590,94 @@ if __name__ == '__main__':
         lambda obs, s=std: demo_action_pf(obs, noise_std=s),
         f'장애물 회피 데모 (포텐셜필드 + 노이즈 std={std:g})',
         f'results/obstacle_env/demo_trajs_pf_noise{std:g}.png')
+
+
+# ============================================================ partial-observ.
+# ADDED 2026-07-21. 배경(실측 근거):
+#   완전관측 + 결정론적 동역학 + 결정론적 전문가에서는 지속적 다봉성이
+#   원리적으로 불가능하다 — 어느 쪽을 골랐는지가 내 위치/속도에 즉시 기록되기
+#   때문. 실제로 랜덤 커밋을 주입해도 t=1에 속도가 선택을 96% 노출했고(t=0만
+#   0.512), 애매 구간이 전체의 2.4%뿐이라 믹스처가 붕괴했다.
+#   그래서 "관측이 원리적으로 해소할 수 없는" 불확실성이 필요하다: 장애물을
+#   센싱 반경 안에서만 보이게 하고, 장애물이 경로를 막을지 여부 자체를
+#   확률적으로 만든다. 그러면 초반 STG가 진짜 이봉(직진 vs 우회)이 되고,
+#   그 불확실성은 관측에 정보가 없어 기하학으로 재구성할 수 없다.
+class PartialObsObstacleAvoidPoint2D(ObstacleAvoidPoint2D):
+  """센싱 반경 밖의 장애물은 관측되지 않는 부분관측 버전.
+
+  관측 필드는 부모와 같되 obstacle_visible(1,)이 추가된다. 안 보일 때는
+  obstacle_rel_pos=(0,0), obstacle_radius=0, obstacle_visible=0으로 마스킹한다
+  (플래그가 있어야 '원점에 반경0 장애물'과 '안 보임'이 구분된다).
+
+  block_prob 확률로만 장애물을 경로 위에 놓고, 나머지는 경로에서 확실히 벗어난
+  곳에 놓는다 — "막힐까 안 막힐까"가 관측 불가능한 진짜 이봉을 만들기 위함.
+  """
+
+  def __init__(self, sensing_radius=0.40, block_prob=0.5, **kwargs):
+    super().__init__(**kwargs)
+    self._sensing_radius = sensing_radius
+    self._block_prob = block_prob
+    self._is_blocking_episode = True
+
+  def _place_obstacle(self):
+    self._is_blocking_episode = bool(np.random.uniform() < self._block_prob)
+    if self._is_blocking_episode:
+      return super()._place_obstacle()      # 기존 로직: 경로 위에 배치
+    # 비차단: 시작-골 직선에서 확실히 벗어나게 (수직거리 > radius+clearance)
+    start, goal = self._cur_pos, self._goal_pos
+    seg = goal - start
+    seg_len = float(np.linalg.norm(seg))
+    direction = seg / seg_len
+    perp = np.array([-direction[1], direction[0]], dtype=np.float32)
+    for _ in range(40):
+      radius = float(np.random.uniform(*self._radius_range))
+      frac = float(np.random.uniform(*self._path_frac_range))
+      # 수직으로 크게 밀어 확실히 비차단
+      offset = float(np.random.choice([-1.0, 1.0])) * float(
+          np.random.uniform(radius + 0.20, radius + 0.55))
+      center = (start + frac * seg + offset * perp).astype(np.float32)
+      wall_gap = min(
+          center[0] - BOUNDS_X[0], BOUNDS_X[1] - center[0],
+          center[1] - BOUNDS_Y[0], BOUNDS_Y[1] - center[1]) - radius
+      if (np.linalg.norm(center - start) > radius + 0.05 and
+          np.linalg.norm(center - goal) > radius + self._success_radius + 0.05
+          and wall_gap >= self._min_wall_gap):
+        break
+    self._cur_obstacle = (center, radius)
+    self.add_obstacle(center, radius)
+
+  def _visible(self) -> bool:
+    center, radius = self._cur_obstacle
+    return bool(np.linalg.norm(center - self._cur_pos) - radius
+                < self._sensing_radius)
+
+  def _augment(self, obs: dict) -> dict:
+    center, radius = self._cur_obstacle
+    obs = dict(obs)
+    if self._visible():
+      obs['obstacle_rel_pos'] = (center - self._cur_pos).astype(np.float32)
+      obs['obstacle_radius'] = np.array([radius], dtype=np.float32)
+      obs['obstacle_visible'] = np.array([1.0], dtype=np.float32)
+    else:
+      obs['obstacle_rel_pos'] = np.zeros(2, dtype=np.float32)
+      obs['obstacle_radius'] = np.zeros(1, dtype=np.float32)
+      obs['obstacle_visible'] = np.array([0.0], dtype=np.float32)
+    return obs
+
+  def observation_spec(self):
+    spec = dict(super().observation_spec())
+    spec['obstacle_visible'] = specs.Array((1,), dtype=np.float32)
+    return spec
+
+
+def demo_action_partial(obs: dict) -> np.ndarray:
+  """부분관측용 전문가: 장애물이 보일 때만 회피, 안 보이면 목표로 직진.
+
+  전문가도 학습자와 똑같이 관측된 정보만 쓴다(특권 정보 없음) — 그래야 BC가
+  well-posed하다. 전문가가 안 보이는 장애물을 피해버리면 학습자는 관측에 없는
+  근거로 행동해야 해서 문제가 성립하지 않는다.
+  """
+  if float(np.asarray(obs['obstacle_visible']).reshape(-1)[0]) < 0.5:
+    return pd_controller(obs['cur_pos'], obs['cur_vel'], obs['goal_pos'])
+  return avoid_controller(obs['cur_pos'], obs['cur_vel'], obs['goal_pos'],
+                          obs['obstacle_rel_pos'], obs['obstacle_radius'])
