@@ -49,7 +49,7 @@ def fig_to_frame(fig):
 
 
 def rollout_full(probe, seed, max_steps=300, deterministic=True,
-                 driver='learned'):
+                 driver='learned', demo_noise_std=0.0):
   """롤아웃하며 위치·분산·전체 확률분포(probs)·관측을 기록.
 
   driver='learned'(기본): 학습된 정책이 조종.
@@ -58,6 +58,9 @@ def rollout_full(probe, seed, max_steps=300, deterministic=True,
   driver='demo': 원본 데모 컨트롤러(접선점 조준, demo_action)가 조종하고,
     분포/분산은 그대로 주어진 checkpoint의 예측기로 조회 — '데모가 실제로
     어떻게 움직이고 그 순간 예측기는 뭐라고 보는지'를 같이 보기 위함.
+    demo_noise_std>0이면 train_obstacle_predictor.py --tangent-noise-std와
+    동일하게 demo_action 출력에 가우시안 노이즈를 더해, 그 데이터셋 수집 때
+    실제로 섞인 노이즈 크기를 그대로 재현한다.
   """
   np.random.seed(seed)
   env = ObstacleAvoidPoint2D()
@@ -75,6 +78,9 @@ def rollout_full(probe, seed, max_steps=300, deterministic=True,
     probs_list.append(rec.probs)
     if driver == 'demo':
       action = np.asarray(demo_action(obs), dtype=np.float32)
+      if demo_noise_std > 0:
+        action = action + np.random.normal(0, demo_noise_std, size=2).astype(
+            np.float32)
     elif deterministic:
       norm = probe.normalize_obs(jax.tree.map(lambda x: np.asarray(x)[None], obs))
       concat = jnp.concatenate([norm[f] for f in probe.obs_fields], axis=-1)
@@ -114,6 +120,9 @@ def main():
   ap.add_argument('--driver', choices=['learned', 'demo'], default='learned',
                   help='learned=학습된 정책이 조종, demo=원본 데모 컨트롤러가'
                        ' 조종(예측기는 그대로 조회 — 학습 데이터 자체를 보기)')
+  ap.add_argument('--demo-noise-std', type=float, default=0.0,
+                  help='driver=demo일 때 demo_action에 더할 가우시안 액션'
+                       ' 노이즈 표준편차 (그 데이터셋 수집 때 쓴 값과 동일하게)')
   ap.add_argument('--out', default='results/videos/skill_chaining.mp4')
   args = ap.parse_args()
 
@@ -127,7 +136,9 @@ def main():
   ax2 = fig.add_subplot(gs[:, 2])
 
   if args.driver == 'demo':
-    mode_label = '원본 데모 컨트롤러(접선점 조준)'
+    mode_label = ('원본 데모 컨트롤러(접선점 조준)' +
+                  (f' + 노이즈 std={args.demo_noise_std:g}'
+                   if args.demo_noise_std > 0 else ''))
   else:
     mode_label = '학습된 정책 — ' + ('결정론적(mode)' if args.deterministic
                                   else '확률 샘플링')
@@ -136,7 +147,8 @@ def main():
   for k in range(args.episodes):
     seed = args.seed0 + k
     pos, varis, probs, obs_list, obst, goal, succ = rollout_full(
-        probe, seed, deterministic=args.deterministic, driver=args.driver)
+        probe, seed, deterministic=args.deterministic, driver=args.driver,
+        demo_noise_std=args.demo_noise_std)
     boundaries, thresh, entries = detect_segments(
         varis, args.factor, args.smooth, args.hysteresis, args.min_gap)
     boundaries = [max(refine_resolve_point(varis, b), e + 1)

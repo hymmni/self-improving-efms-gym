@@ -96,19 +96,20 @@ def train_subset(data, stats, frac, steps, batch, lr, seed):
   return params, nets
 
 
-def get_ensemble(n_models, frac, steps, batch, lr, cache_path, refresh=False):
+def get_ensemble(n_models, frac, steps, batch, lr, cache_path, refresh=False,
+                 data_path=DATA_PATH):
   """앙상블을 학습하거나 캐시에서 로드. 장면 평가는 순전파뿐이라 재사용이 싸다."""
   if os.path.exists(cache_path) and not refresh:
     with open(cache_path, 'rb') as fp:
       cached = pickle.load(fp)
     if cached['n_models'] == n_models and cached['frac'] == frac:
       print(f'앙상블 캐시 사용: {cache_path}')
-      with open(DATA_PATH, 'rb') as fp:
+      with open(data_path, 'rb') as fp:
         data = pickle.load(fp)
       _, nets = train_subset(data, compute_stats(data), frac, 0, batch, lr, 0)
       return [jax.tree.map(jnp.asarray, p) for p in cached['params']], nets
 
-  with open(DATA_PATH, 'rb') as fp:
+  with open(data_path, 'rb') as fp:
     data = pickle.load(fp)
   stats = compute_stats(data)
   print(f'{n_models}개 모델 학습 (각 데이터 {int(frac*100)}%)...')
@@ -205,6 +206,15 @@ def main():
   ap.add_argument('--mode', choices=['normal', 'ood', 'verify', 'scenes',
                                      'datasweep', 'oblique'],
                   default='normal')
+  ap.add_argument('--controller', choices=['pf', 'tangent'], default='pf',
+                  help='pf=기존 노이즈 데모, tangent=노이즈 없는(혹은 '
+                       '--tangent-noise-std로 소량 노이즈만 더한) 접선점 조준'
+                       ' 데모(data/cache/출력 모두 접미사로 분리)')
+  ap.add_argument('--tangent-noise-std', type=float, default=0.0,
+                  help='controller=tangent일 때, train_obstacle_predictor.py'
+                       ' --tangent-noise-std로 만든 소량-노이즈 데이터셋을'
+                       ' 가리키려면 그때 쓴 값과 동일하게 지정'
+                       ' (data/obstacle_demos_clean_n{값}.pkl)')
   ap.add_argument('--fracs', type=float, nargs='+',
                   default=[0.05, 0.2, 0.5, 1.0],
                   help='datasweep 모드에서 비교할 데이터 비율들')
@@ -219,7 +229,16 @@ def main():
   ap.add_argument('--out', default=None)
   args = ap.parse_args()
 
-  with open(DATA_PATH, 'rb') as fp:
+  if args.controller == 'pf':
+    suffix = ''
+  elif args.tangent_noise_std > 0:
+    suffix = f'_clean_n{args.tangent_noise_std:g}'
+  else:
+    suffix = '_clean'
+  data_path = DATA_PATH if suffix == '' else DATA_PATH.replace(
+      '.pkl', f'{suffix}.pkl')
+
+  with open(data_path, 'rb') as fp:
     data = pickle.load(fp)
   normalize_obs, _, _ = make_normalizers_obstacle(compute_stats(data))
   gs = args.grid
@@ -230,10 +249,11 @@ def main():
     obst_r = 0.2
     ep_maps, al_maps = [], []
     for frac in args.fracs:
-      cache = f'results/obstacle_env/ensemble_cache_frac{frac:g}.pkl'
+      cache = f'results/obstacle_env/ensemble_cache_frac{frac:g}{suffix}.pkl'
       print(f'\n--- frac={frac:g} ---')
       models, nets = get_ensemble(args.models, frac, args.steps, args.batch,
-                                  args.lr, cache, args.refresh_cache)
+                                  args.lr, cache, args.refresh_cache,
+                                  data_path=data_path)
       mu_var_fn = make_mu_var_fn(nets)
       epistemic, aleatoric, xs = eval_scene(models, nets, normalize_obs,
                                             mu_var_fn, goal, obst_c, obst_r,
@@ -242,7 +262,7 @@ def main():
       print(f'  epistemic 평균={epistemic.mean():.2f}  '
             f'aleatoric 평균={aleatoric.mean():.2f}')
 
-    out = args.out or 'results/obstacle_env/uncertainty_datasweep.png'
+    out = args.out or f'results/obstacle_env/uncertainty_datasweep{suffix}.png'
     ext = (-1, 1, -1, 1)
     vmax_ep = float(np.percentile(np.stack(ep_maps), 99.5))
     vmax_al = float(np.percentile(np.stack(al_maps), 99.5))
@@ -282,10 +302,11 @@ def main():
 
   # frac별로 캐시 파일을 분리 -- datasweep이 만든 frac=1.0 등의 캐시를 그대로
   # 재사용하고, 서로 다른 frac 실행이 같은 캐시 파일을 덮어쓰지 않게 한다.
-  cache_path = (CACHE_PATH if args.frac == 0.2 else
-               f'results/obstacle_env/ensemble_cache_frac{args.frac:g}.pkl')
+  cache_path = (CACHE_PATH if (args.frac == 0.2 and suffix == '') else
+               f'results/obstacle_env/ensemble_cache_frac{args.frac:g}{suffix}.pkl')
   models, nets = get_ensemble(args.models, args.frac, args.steps, args.batch,
-                              args.lr, cache_path, args.refresh_cache)
+                              args.lr, cache_path, args.refresh_cache,
+                              data_path=data_path)
   mu_var_fn = make_mu_var_fn(nets)
 
   if args.mode in ('normal', 'ood'):
@@ -296,7 +317,7 @@ def main():
     epistemic, aleatoric, xs = eval_scene(models, nets, normalize_obs,
                                           mu_var_fn, goal, obst_c, obst_r,
                                           speed, gs)
-    out = args.out or f'results/obstacle_env/uncertainty_{args.mode}.png'
+    out = args.out or f'results/obstacle_env/uncertainty_{args.mode}{suffix}.png'
     ext = (-1, 1, -1, 1)
     vmax_ep = float(np.percentile(epistemic, 99.5))
     vmax_al = float(np.percentile(aleatoric, 99.5))
@@ -333,7 +354,7 @@ def main():
                                           mu_var_fn, goal, obst_c, obst_r,
                                           0.006, gs)
     blocked = blocked_mask(xs, goal, obst_c, obst_r)
-    out = args.out or 'results/obstacle_env/uncertainty_verify.png'
+    out = args.out or f'results/obstacle_env/uncertainty_verify{suffix}.png'
     ext = (-1, 1, -1, 1)
 
     fig, ax = plt.subplots(figsize=(7, 6.4))
@@ -375,7 +396,7 @@ def main():
     ext = (-1, 1, -1, 1)
 
     # ---- 패널 1: 2D 지도 + 차단 경계 등고선 (verify와 동일 방식, 비스듬 배치)
-    out2d = (args.out or 'results/obstacle_env/uncertainty_oblique_map.png')
+    out2d = (args.out or f'results/obstacle_env/uncertainty_oblique_map{suffix}.png')
     fig, ax = plt.subplots(figsize=(7, 6.4))
     vmax_al = float(np.percentile(aleatoric, 99.5))
     im = ax.imshow(aleatoric, origin='lower', extent=ext, cmap='magma',
