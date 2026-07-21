@@ -510,6 +510,121 @@ def build_continuous_act_discrete_dist_v0(
   )
 
 
+# ADDED 2026-07-21 (additive; 원본 build_continuous_act_discrete_dist_v0은 그대로):
+# 멀티모달 액션 헤드. 단일 가우시안은 갈림길(좌/우 두 모드)에서 평균이 0으로
+# 상쇄돼 커밋을 못 한다(실측: |loc|이 30배 붕괴, scale/|loc| 6~31배). K개
+# 대각 가우시안 믹스처로 두 분기를 각각 봉우리로 표현해 한쪽에 커밋 가능하게 함.
+class MixtureMVNDiagParams(NamedTuple):
+  """Parameters for a mixture of diagonal MVNs (multimodal action head)."""
+  mixture_logits: jnp.ndarray   # (..., K)
+  locs: jnp.ndarray             # (..., K, act_dim)
+  scale_diags: jnp.ndarray      # (..., K, act_dim)
+
+
+def _mixture_act_dist(params: MixtureMVNDiagParams):
+  return tfd.MixtureSameFamily(
+      mixture_distribution=tfd.Categorical(logits=params.mixture_logits),
+      components_distribution=tfd.MultivariateNormalDiag(
+          loc=params.locs, scale_diag=params.scale_diags))
+
+
+def build_mixture_act_discrete_dist_v0(
+    layer_sizes: Sequence[int],
+    act_dim: int,
+    num_dist_bins: int,
+    dummy_input,
+    n_mix: int = 3,
+) -> TIMERNetworks:
+  """build_continuous_act_discrete_dist_v0과 동일하되 액션 헤드만 K-성분 가우시안
+  믹스처. STG(거리) 헤드는 그대로 카테고리컬. 액션 헤드/거리 헤드는 여전히 각자
+  독립 MLP(백본 미공유)."""
+
+  def _network(x: Observation) -> TIMERNetworkOutput:
+    #### 액션 파트 (믹스처)
+    h_act = hk.nets.MLP(
+        output_sizes=layer_sizes,
+        activation=jax.nn.relu,
+        activate_final=True,)(x)
+    mix_logits = hk.Linear(
+        n_mix, w_init=hk.initializers.VarianceScaling(1e-4),
+        b_init=hk.initializers.Constant(0.))(h_act)                 # (..., K)
+    locs = hk.Linear(
+        n_mix * act_dim, w_init=hk.initializers.VarianceScaling(1e-4),
+        b_init=hk.initializers.Constant(0.))(h_act)
+    scales = hk.Linear(
+        n_mix * act_dim, w_init=hk.initializers.VarianceScaling(1e-4),
+        b_init=hk.initializers.Constant(0.))(h_act)
+    locs = locs.reshape(locs.shape[:-1] + (n_mix, act_dim))
+    scales = jax.nn.softplus(
+        scales.reshape(scales.shape[:-1] + (n_mix, act_dim))) + MIN_ACT_SCALE
+    act_dist = MixtureMVNDiagParams(mixture_logits=mix_logits, locs=locs,
+                                    scale_diags=scales)
+
+    #### 거리 파트 (원본과 동일)
+    h_dist = hk.nets.MLP(
+        output_sizes=layer_sizes,
+        activation=jax.nn.relu,
+        activate_final=True,)(x)
+    dist_logits = hk.Linear(num_dist_bins, with_bias=False)(h_dist)
+    distance_dist = CategoricalParams(logits=dist_logits)
+
+    return TIMERNetworkOutput(
+        act_dist_params=act_dist,
+        dist_to_succ_dist_params=distance_dist,)
+
+  transformed_network = hk.without_apply_rng(hk.transform(_network))
+  def init_closure(rng: PRNGKey):
+    return transformed_network.init(rng, dummy_input)
+  network = FeedForwardNetwork(
+      init=init_closure,
+      apply=transformed_network.apply,)
+
+  def act_log_prob(params: MixtureMVNDiagParams, action):
+    return _mixture_act_dist(params).log_prob(action)
+
+  def act_entropy(params: MixtureMVNDiagParams, key: PRNGKey) -> Entropy:
+    # 믹스처는 해석적 엔트로피가 없어 몬테카를로 추정(1 샘플)로 근사.
+    d = _mixture_act_dist(params)
+    s = d.sample(seed=key)
+    return -d.log_prob(s)
+
+  def sample_act(params: MixtureMVNDiagParams, key: PRNGKey):
+    return _mixture_act_dist(params).sample(seed=key)
+
+  def sample_act_mode(params: MixtureMVNDiagParams, key: PRNGKey):
+    # 믹스처엔 .mode()가 없으니 '가중치 최대 성분의 평균'을 결정론적 액션으로.
+    del key
+    idx = jnp.argmax(params.mixture_logits, axis=-1)   # (...,)
+    picked = jnp.take_along_axis(params.locs, idx[..., None, None], axis=-2)
+    return picked[..., 0, :]
+
+  def dist_log_prob(params: CategoricalParams, action):
+    return tfd.Categorical(logits=params.logits).log_prob(action)
+
+  def dist_entropy(params: CategoricalParams, key: PRNGKey) -> Entropy:
+    del key
+    return tfd.Categorical(logits=params.logits).entropy()
+
+  def sample_dist(params: CategoricalParams, key: PRNGKey):
+    return tfd.Categorical(logits=params.logits).sample(seed=key)
+
+  def sample_dist_mode(params: CategoricalParams, key: PRNGKey):
+    del key
+    return tfd.Categorical(logits=params.logits).mode()
+
+  return TIMERNetworks(
+      network=network,
+      act_log_prob=act_log_prob,
+      sample_act=sample_act,
+      dist_log_prob=dist_log_prob,
+      sample_dist=sample_dist,
+      act_entropy=act_entropy,
+      sample_act_mode=sample_act_mode,
+      dist_entropy=dist_entropy,
+      sample_dist_mode=sample_dist_mode,
+  )
+
+
 ################################################################################
 # Timestep prediction converters
 ################################################################################
