@@ -54,6 +54,20 @@ class CarryConfig:
   # 평행죠 핑거 단면 두께(개도 바깥으로 늘어나는 폭). ALOHA 핑거 어태치먼트의
   # 공식 CAD 치수는 비공개라, 평행죠 그리퍼 핑거의 통상적 단면 두께로 근사
   finger_thickness: float = 10.0      # mm
+  # 손가락이 물리는 레일 플레이트 두께 / 위쪽 마운트 스템 치수. 공식 CAD가
+  # 없어 Dynamixel XM430 하우징(28.5x46.5x34mm)과 마운트 브래킷 크기로 근사
+  rail_plate_thickness: float = 14.0  # mm
+  stem_width: float = 20.0            # mm
+  stem_length: float = 40.0           # mm
+  # 손가락 1개 질량 — 3D 프린트 핑거 어태치먼트 근사(어셈블리 질량에 포함)
+  finger_mass: float = 0.030          # kg
+  # 패드 표면 마찰. pymunk는 접촉 마찰을 sqrt(f_a*f_b)로 합성하므로, 패드를
+  # 1.0으로 두면 접촉 마찰이 물체 쪽 shape 마찰만으로 결정된다(은닉 mu를
+  # 물체 shape에 그대로 심을 수 있다).
+  pad_friction: float = 1.0
+  # 전 스트로크(개도 상한→하한)를 닫는 데 걸리는 시간. 평행죠 그리퍼의
+  # 통상적 개폐 시간
+  finger_close_time: float = 0.5      # s
 
   # --- EE 힘 상한 유도용 (가반하중 스펙) -----------------------------------
   payload_mass: float = 0.75          # kg; ALOHA 공식 가반하중 스펙
@@ -64,6 +78,14 @@ class CarryConfig:
   max_accel: float = 5000.0           # mm/s^2
 
   # --- 제어/물리 ------------------------------------------------------------
+  # EE 임피던스 PD 강성(가속도 차원, 1/s^2). w_n = sqrt(k_p) = 20 rad/s
+  # (~3.2Hz)로, 10Hz 명령을 추종할 만큼 빠르면서 물리 스텝보다 훨씬 느리다.
+  # 이 값이 하중에 의한 **처짐**을 정한다: sag = m_obj*g/(assembly_mass*k_p)
+  # → 30g에서 2.5mm, 350g에서 29mm. 이 처짐이 은닉 질량의 유일한 관측 단서다.
+  k_p: float = 400.0
+  # 손목 회전 강성. 병진보다 10배 강해야 하중 토크에 그리퍼가 통째로 돌아가지
+  # 않는다(이전 시도에서 실측된 실패 모드)
+  k_p_ang: float = 4000.0
   control_hz: float = 10.0
   physics_dt: float = 0.002           # s; 마찰 파지는 작은 스텝이 필요
   solver_iterations: int = 30         # 마찰 파지 안정화에 필요한 최소치
