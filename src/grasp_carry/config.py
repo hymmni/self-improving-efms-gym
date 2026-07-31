@@ -16,6 +16,7 @@
 스펙, 음료 캔 규격 등)에서 값을 유도해 근거 없는 튜닝을 배제한다.
 """
 
+import math
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -121,6 +122,32 @@ class CarryConfig:
     return 1.4 * self.gripper_outer_width
 
   @property
+  def k_v(self) -> float:
+    """병진 PD 감쇠(1/s) — 임계감쇠 `2*sqrt(k_p)`.
+
+    임계감쇠보다 낮으면 오버슛으로 물체를 때리고, 높으면 10Hz 명령을 못
+    따라간다. 자유 파라미터를 늘리지 않도록 `k_p`에서 기계적으로 유도한다.
+    """
+    return 2.0 * math.sqrt(self.k_p)
+
+  @property
+  def k_v_ang(self) -> float:
+    """회전 PD 감쇠(1/s) — 임계감쇠 `2*sqrt(k_p_ang)`."""
+    return 2.0 * math.sqrt(self.k_p_ang)
+
+  @property
+  def finger_speed_max(self) -> float:
+    """손가락 1개의 베이스 대비 속도 상한(mm/s).
+
+    전 스트로크(개도 상한→하한)의 손가락 1개 이동량 `(max-min)/2`를
+    `finger_close_time`에 닫는 속도. 이 상한이 없으면 가벼운 손가락에
+    `grip_force`가 그대로 걸려 가속도가 과도해지고, 빈 공간에서 가속한
+    손가락이 물체를 때려 튕겨낸다(이전 시도에서 실측된 실패 모드).
+    """
+    return (self.finger_opening_max - self.finger_opening_min) / 2.0 \
+        / self.finger_close_time
+
+  @property
   def ee_force_max(self) -> float:
     """EE 힘 상한(mN) — 가반하중을 중력 하에서 지지하고 추가로
     `max_accel`으로 가속할 수 있는 힘.
@@ -129,6 +156,15 @@ class CarryConfig:
     """
     return (self.assembly_mass + self.payload_mass) * (
         self.gravity + self.max_accel)
+
+  @property
+  def ee_torque_max(self) -> float:
+    """손목 토크 상한(mN·mm) — 힘 상한이 그리퍼 반폭에서 작용할 때의 토크.
+
+    `ee_force_max * gripper_outer_width / 2`. 손목 모터의 물리적 한계를
+    나타내며, 하중 토크가 이 값을 넘으면 그리퍼가 통째로 돌아간다.
+    """
+    return self.ee_force_max * self.gripper_outer_width / 2.0
 
   def max_hold_mass(self, mu: float) -> float:
     """주어진 마찰계수 `mu`에서 정적으로 들 수 있는 최대 질량(kg).
