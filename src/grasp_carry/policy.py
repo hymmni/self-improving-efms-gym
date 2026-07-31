@@ -590,11 +590,16 @@ class ScriptedCarryPolicy:
     """
     cfg = self.cfg
     mass, mu = self._hidden(env)
-    # (1) 패드 2개의 회전 저항 모멘트. 접선 트랙션 중 중력 지지분을 뺀 나머지.
-    free = mu * cfg.grip_force - mass * cfg.gravity / 2.0
-    if free <= 0.0 or contact_len <= 0.0:
+    if contact_len <= 0.0:
       return self._min_lead()
-    t_resist = free * contact_len / 2.0
+    # (1) 패드 2개의 회전 저항 모멘트. 출발점은 config의 회전 저항 상한
+    # `mu*N*L`(접촉력 **전부**가 최대 지렛대 L에서 작용하는 경우)이고, 거기에
+    # 두 가지 보정을 건다: 압력이 접촉 길이에 고르게 분포한다는 가정(계수 1/2)과,
+    # 접선 트랙션 중 블록을 중력에 대해 붙드는 데 이미 쓰이는 몫(패드당 m*g/2).
+    t_resist = (0.5 * cfg.tip_torque_capacity(contact_len, mu)
+                - 0.25 * mass * cfg.gravity * contact_len)
+    if t_resist <= 0.0:
+      return self._min_lead()
     if arm <= 1e-6:
       return self.speed * self._backoff
     s = t_resist / (self.torque_safety * cfg.k_p * mass * arm)
