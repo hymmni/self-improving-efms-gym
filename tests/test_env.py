@@ -125,11 +125,22 @@ def test_base_never_descends_past_the_kinematic_limit():
   env.reset(seed=2)
   env.space.remove(env.block_body, env.block_shape)   # 방해물 제거
   mid_x = 0.5 * (env.src_box.right_outer + env.tgt_box.left_outer)
-  for tx in (env.src_box.center_x, mid_x, env.tgt_box.center_x):
-    for _ in range(25):
+  def press(tx, n):
+    for _ in range(n):
       env.step((tx, 10_000.0, 0.0, 0.0))
       base = env.gripper.base
       assert base.position.y <= env.max_descend_y(base.position.x) + 1e-6
+
+  for tx in (env.src_box.center_x, mid_x, env.tgt_box.center_x):
+    # 먼저 rim 위로 들어올려 이동한 뒤 누른다. 최대 하향력을 준 채 가로지르면
+    # 그리퍼가 rim에 얹혀 마찰(0.5 * ee_force_max)에 걸려 끼고, 아래의
+    # "한계에 도달했나" 확인이 이동 도중 상태를 재게 된다(실측: x=140.8에서
+    # 속도 0으로 정지). 실제 정책도 들어올린 뒤 이동한다.
+    for _ in range(25):
+      env.step((tx, 0.0, 0.0, 0.0))
+      base = env.gripper.base
+      assert base.position.y <= env.max_descend_y(base.position.x) + 1e-6
+    press(tx, 25)
     # 한계에 실제로 도달했는지 — 도달 못 하면 위 부등식은 공허하다.
     assert env.gripper.base.position.y == pytest.approx(
         env.max_descend_y(), abs=0.5)
