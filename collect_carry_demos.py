@@ -31,16 +31,26 @@ from src.grasp_carry.policy import ScriptedCarryPolicy
 def collect(n_episodes: int, explore_range: Tuple[float, float],
             seed0: int = 0, explore_seed: int = 0,
             allow_regrasp: bool = True, speed: Optional[float] = None,
+            keep_failures: bool = False,
             config: Optional[CarryConfig] = None) -> dict:
   """`speed`가 `_lift_lead`(연직 리드 = 최악 처짐 + speed)를 정한다 — `explore_range`는
   수평 채널만 우회하므로, 연직 슬립(들어올릴 때 그립력이 못 버티는 것)까지
-  실제로 만들려면 `speed`도 올려야 한다(둘은 독립된 채널이다)."""
+  실제로 만들려면 `speed`도 올려야 한다(둘은 독립된 채널이다).
+
+  `keep_failures=True`면 실패 에피소드도 저장한다. 그 안의 모든 스텝은
+  `time_to_success = max_steps`(카테고리 STG 헤드의 마지막 bin, 유효한
+  0..max_steps-1 범위 밖)로 라벨링된다 — "성공까지 남은 스텝"이 아니라
+  "이 궤적은 결국 실패했다"는 별도 클래스다. 이 라벨을 학습에 그대로 쓰면
+  범주형 분포 하나에서 `P(성공) = 1 - P(마지막 bin)`과, 성공 bin만
+  재정규화한 "성공한다면 몇 스텝"을 둘 다 뽑을 수 있다(성공률과 성공 분포
+  quantile을 같은 모델에서 얻는 방법 — 실패를 배제하던 기존 기본값과 달리
+  조건 A를 액션-조건부로 검증하려면 이게 필요하다)."""
   cfg = config or CarryConfig()
   env = GraspCarry2D(cfg)
   rng = np.random.default_rng(explore_seed)
 
   obs_all, act_all, ttg_all, eid_all = [], [], [], []
-  contact_all, held_all, speed_all = [], [], []
+  contact_all, held_all, speed_all, succ_all = [], [], [], []
   mass_all, mu_all = [], []
   outcomes: dict = {}
   kept = 0
@@ -67,17 +77,22 @@ def collect(n_episodes: int, explore_range: Tuple[float, float],
       obs_l.append(obs)
 
     outcomes[info['outcome']] = outcomes.get(info['outcome'], 0) + 1
-    if info['outcome'] != 'success':
+    is_success = info['outcome'] == 'success'
+    if not is_success and not keep_failures:
       continue                                    # 미성공 -> 제외 (논문과 동일)
 
     L = len(act_l)
     assert len(obs_l) == L, '관측/액션 스텝 수 불일치'
-    ttg = (L - 1 - np.arange(L)).astype(np.float32)
+    if is_success:
+      ttg = (L - 1 - np.arange(L)).astype(np.float32)
+    else:
+      ttg = np.full(L, cfg.max_steps, dtype=np.float32)   # 실패 bin(마지막)
     obs_all.append(np.array(obs_l, dtype=np.float32))
     act_all.append(np.array(act_l, dtype=np.float32))
     contact_all.append(np.array(contact_l, dtype=np.float32))
     held_all.append(np.array(held_l, dtype=bool))
     speed_all.append(np.array(speed_l, dtype=np.float32))
+    succ_all.append(np.full(L, is_success, dtype=bool))
     ttg_all.append(ttg)
     eid_all.append(np.full(L, kept, dtype=np.int32))
     mass_all.append(np.full(L, info['mass'], dtype=np.float32))
@@ -101,6 +116,11 @@ def collect(n_episodes: int, explore_range: Tuple[float, float],
                  else np.zeros((0,), dtype=bool)),
       'commanded_speed': (np.concatenate(speed_all) if speed_all
                          else np.zeros((0,), dtype=np.float32)),
+      # keep_failures=False면 전부 True(성공만 남았으므로). True면 실패
+      # 에피소드의 스텝은 전부 False — time_to_success가 실패 bin(=max_steps)
+      # 인지와 동치이지만, 필터링을 더 읽기 쉽게 하려고 따로 둔다.
+      'is_success': (np.concatenate(succ_all) if succ_all
+                    else np.zeros((0,), dtype=bool)),
       # 은닉 물성 — **진단·분석 전용**. env.observe_frame()이 이미 관측에서
       # 뺐으므로 여기 있다고 학습 입력에 오염되지 않지만, 실수로 넣지 마라.
       'hidden_mass': (np.concatenate(mass_all) if mass_all
@@ -116,6 +136,8 @@ def collect(n_episodes: int, explore_range: Tuple[float, float],
           'explore_range': tuple(explore_range),
           'speed': speed,
           'allow_regrasp': allow_regrasp,
+          'keep_failures': keep_failures,
+          'failure_bin': cfg.max_steps,
           'requested_episodes': n_episodes,
           'kept_episodes': kept,
           'outcomes': outcomes,
@@ -125,7 +147,8 @@ def collect(n_episodes: int, explore_range: Tuple[float, float],
           'max_steps': cfg.max_steps,
       },
   }
-  print(f'수집 완료: 성공 {kept}/{n_episodes} 에피소드, '
+  kept_label = f'{kept}(전체)' if keep_failures else f'성공 {kept}'
+  print(f'수집 완료: {kept_label}/{n_episodes} 에피소드, '
         f'{len(data["time_to_success"])} 스텝, outcomes={outcomes}')
   return data
 
@@ -143,12 +166,17 @@ def main(argv=None) -> int:
                         '이것도 명목값(기본 12.5)보다 올려야 한다.'))
   ap.add_argument('--no-regrasp', action='store_true',
                   help='재파지를 금지하고 항상 직접 운반한다.')
+  ap.add_argument('--keep-failures', action='store_true',
+                  help=('실패 에피소드도 저장한다. 그 안의 모든 스텝은 '
+                        'time_to_success=max_steps(마지막 bin, 실패 클래스)로 '
+                        '라벨링된다. 기본은 꺼져 있다(성공만, 논문과 동일).'))
   ap.add_argument('--out', default='data/grasp_carry_demos.pkl')
   args = ap.parse_args(argv)
 
   data = collect(args.episodes, tuple(args.explore_range), seed0=args.seed0,
                  explore_seed=args.explore_seed,
-                 allow_regrasp=not args.no_regrasp, speed=args.speed)
+                 allow_regrasp=not args.no_regrasp, speed=args.speed,
+                 keep_failures=args.keep_failures)
   os.makedirs(os.path.dirname(args.out) or '.', exist_ok=True)
   with open(args.out, 'wb') as fp:
     pickle.dump(data, fp)
