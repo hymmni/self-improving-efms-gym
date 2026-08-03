@@ -178,14 +178,25 @@ def render_frame(env, action=None, side_label='', block_color='tab:blue',
   return frame
 
 
-def run_pair(seeds, speeds, cfg, fps, out):
-  """같은 시드를 두 속도로 나란히 굴려 mp4로 저장한다."""
+def run_pair(seeds, speeds, cfg, fps, out, explore_range=None):
+  """같은 시드를 두 속도로 나란히 굴려 mp4로 저장한다.
+
+  `explore_range`를 주면 `speeds`는 라벨에만 쓰이고, 실제 속도는
+  `_speed_cap()`의 안전식을 끄고 이 구간에서 매 파지마다 무작위로 뽑는다
+  (패널마다 다른 RNG 시드라 같은 블록에서도 결과가 갈린다).
+  """
   env_a, env_b = GraspCarry2D(cfg), GraspCarry2D(cfg)
   fig, axes = plt.subplots(1, 2, figsize=(11.2, 4.2), dpi=110)
   frames = []
   for seed in seeds:
     envs = [env_a, env_b]
-    policies = [ScriptedCarryPolicy(speed=float(s), config=cfg) for s in speeds]
+    if explore_range is not None:
+      policies = [ScriptedCarryPolicy(
+          speed=float(speeds[i]), config=cfg, explore_range=explore_range,
+          rng=np.random.default_rng(seed * 2 + i)) for i in range(2)]
+    else:
+      policies = [ScriptedCarryPolicy(speed=float(s), config=cfg)
+                  for s in speeds]
     for e, p in zip(envs, policies):
       e.reset(seed=seed); p.reset()
     done = [False, False]
@@ -208,8 +219,10 @@ def run_pair(seeds, speeds, cfg, fps, out):
           base_offset[i] = None
 
       for i, (e, sp) in enumerate(zip(envs, speeds)):
+        label = (f'explore[{explore_range[0]:g},{explore_range[1]:g}]   '
+                 if explore_range is not None else f'speed={sp:g}   ')
         draw_env(axes[i], e, action=actions[i],
-                side_label=f'speed={sp:g}   ', block_color=colors[i],
+                side_label=label, block_color=colors[i],
                 base_offset=base_offset[i])
       info_a = env_a._info()
       fig.suptitle(
@@ -245,9 +258,17 @@ def main(argv=None) -> int:
   ap.add_argument('--speeds', type=float, nargs=2, default=[28.0, 58.0])
   ap.add_argument('--fps', type=int, default=10)
   ap.add_argument('--out', default='results/videos/grasp_carry.mp4')
+  ap.add_argument('--explore-range', type=float, nargs=2, default=None,
+                  metavar=('LOW', 'HIGH'),
+                  help=('켜면 두 패널 다 안전식을 끄고 이 구간(mm)에서 매 '
+                        '파지마다 무작위 속도를 강제한다(패널마다 다른 RNG라 '
+                        '같은 블록에서도 결과가 갈린다). --speeds는 라벨에만 '
+                        '쓰인다.'))
   args = ap.parse_args(argv)
   cfg = CarryConfig()
-  run_pair(args.seeds, args.speeds, cfg, args.fps, args.out)
+  run_pair(args.seeds, args.speeds, cfg, args.fps, args.out,
+           explore_range=(tuple(args.explore_range)
+                          if args.explore_range else None))
   return 0
 
 

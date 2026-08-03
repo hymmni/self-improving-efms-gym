@@ -11,7 +11,7 @@ r"""`GraspCarry2D` + `ScriptedCarryPolicy` 평가 CLI (phase 3, step 3).
 """
 
 import argparse
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -38,7 +38,12 @@ def rollout(env: GraspCarry2D, policy: ScriptedCarryPolicy, seed: int) -> dict:
       'src_width': env.src_box.inner_width,
       'block_h': env.block_h,
       'regrasped': policy.regrasped,
+      # 느슨한 기준(정책 자기진단): 2패드 접촉이 2제어스텝 끊기면 카운트 —
+      # "다시 접근해야 했던 횟수"에 가깝다.
       'n_drops': policy.n_drops,
+      # 엄격한 기준(env 그라운드트루스): 그 위에 "블록이 지지면보다 5mm+
+      # 떠 있었다"는 공중 확인까지 요구한다. 진짜 낙하만 센다.
+      'n_air_drops': info['n_drops'],
       'contact': (float(np.mean(policy.grasp_contacts))
                   if policy.grasp_contacts else 0.0),
       'speeds': list(policy.grasp_speeds),
@@ -47,11 +52,15 @@ def rollout(env: GraspCarry2D, policy: ScriptedCarryPolicy, seed: int) -> dict:
 
 def evaluate(episodes: int, seed0: int = 0, speed: Optional[float] = None,
              allow_regrasp: bool = True, privileged: bool = False,
-             config: Optional[CarryConfig] = None) -> List[dict]:
+             config: Optional[CarryConfig] = None,
+             explore_range: Optional[Tuple[float, float]] = None,
+             explore_seed: int = 0) -> List[dict]:
   cfg = config or CarryConfig()
   env = GraspCarry2D(cfg)
+  rng = np.random.default_rng(explore_seed) if explore_range else None
   policy = ScriptedCarryPolicy(speed=speed, allow_regrasp=allow_regrasp,
-                               privileged=privileged, config=cfg)
+                               privileged=privileged, config=cfg,
+                               explore_range=explore_range, rng=rng)
   return [rollout(env, policy, seed0 + i) for i in range(episodes)]
 
 
@@ -76,6 +85,7 @@ def summarize(rows: List[dict]) -> dict:
       'other': other,
       'regrasp_rate': float(np.mean([r['regrasped'] for r in rows])),
       'mean_drops': float(np.mean([r['n_drops'] for r in rows])),
+      'mean_air_drops': float(np.mean([r['n_air_drops'] for r in rows])),
       'mean_contact': float(np.mean([r['contact'] for r in rows])),
   }
 
@@ -90,7 +100,10 @@ def report(rows: List[dict], verbose: bool = False) -> dict:
   print(f"failures            : tipped {s['tipped']} | "
         f"timeout {s['timeout']} | other {s['other']}")
   print(f"regrasp rate        : {s['regrasp_rate']:.1%}")
-  print(f"mean drops/episode  : {s['mean_drops']:.2f}")
+  print(f"mean drops/episode  : {s['mean_drops']:.2f}  "
+        f"(느슨한 기준 — 접촉 2스텝 끊김. 진짜 공중낙하는 아래)")
+  print(f"mean air-drops/ep   : {s['mean_air_drops']:.2f}  "
+        f"(엄격한 기준 — 지지면보다 5mm+ 뜬 채로 안 잡힘)")
   print(f"mean grasp contact  : {s['mean_contact']:.1f} mm")
   if verbose:
     print('\nseed outcome   steps src_w block_h mass  mu    rg drops contact')
@@ -112,12 +125,24 @@ def main(argv=None) -> int:
                   help='재파지를 금지하고 항상 직접 운반한다.')
   ap.add_argument('--privileged', action='store_true',
                   help='은닉 물성(질량·마찰)의 실제값을 보고 속도를 고른다.')
+  ap.add_argument('--explore-range', type=float, nargs=2, default=None,
+                  metavar=('LOW', 'HIGH'),
+                  help=('켜면 _speed_cap()의 안전식을 완전히 무시하고 매 파지'
+                        '마다 이 구간(mm)에서 균일 샘플한 속도를 강제한다. '
+                        '얕은 파지에서도 위험 영역을 실제로 탐색해 진짜 낙하'
+                        '사례를 만든다(데이터 수집용 — 안전 캘리브레이션이'
+                        ' 아니다). 예: --explore-range 0.4 200'))
+  ap.add_argument('--explore-seed', type=int, default=0,
+                  help='탐색 속도 샘플링용 RNG 시드(재현성).')
   ap.add_argument('--verbose', action='store_true')
   args = ap.parse_args(argv)
 
   rows = evaluate(args.episodes, seed0=args.seed0, speed=args.speed,
                   allow_regrasp=not args.no_regrasp,
-                  privileged=args.privileged)
+                  privileged=args.privileged,
+                  explore_range=(tuple(args.explore_range)
+                                 if args.explore_range else None),
+                  explore_seed=args.explore_seed)
   report(rows, verbose=args.verbose)
   return 0
 
