@@ -141,7 +141,8 @@ class ScriptedCarryPolicy:
                torque_safety: float = 1.0, drop_backoff: float = 0.6,
                config: Optional[CarryConfig] = None,
                explore_range: Optional[Tuple[float, float]] = None,
-               rng: Optional[np.random.Generator] = None):
+               rng: Optional[np.random.Generator] = None,
+               speed_selector: Optional[callable] = None):
     self.cfg = config or CarryConfig()
     cfg = self.cfg
     self.speed = float(speed) if speed is not None else cfg.max_accel / cfg.k_p
@@ -160,6 +161,9 @@ class ScriptedCarryPolicy:
     # 이 안전장치를 데이터 수집 시에는 꺼야 한다.
     self.explore_range = explore_range
     self._rng = rng if rng is not None else np.random.default_rng()
+    # `(env, contact_len, arm) -> 리드(mm)`. 학습된 예측기가 속도를 고르게
+    # 하는 훅(`_speed_cap` 참고). `explore_range`보다 우선한다.
+    self.speed_selector = speed_selector
 
     # 설계 범위의 가장 무거운 블록에서 생기는 처짐(mm). 연직 리드는 이보다
     # 커야 어떤 블록이든 들어올릴 수 있다.
@@ -616,7 +620,15 @@ class ScriptedCarryPolicy:
     `explore_range`가 켜져 있으면 이 물리식 전체를 건너뛰고 그 구간에서
     무작위 속도를 강제한다(위 클래스 문서 참고) — "안전한 상한"이 아니라
     "이번 파지에 실제로 쓸 값"이 된다.
+
+    `speed_selector`가 있으면 그쪽이 우선한다. 학습된 예측기가 속도를 고르게
+    하는 훅으로, 물리식(은닉 물성의 사전 분위수를 쓰는 보수적 상한)과 **같은
+    자리에서 같은 역할**을 하도록 여기 둔다 — 그래야 선택 규칙만 바뀌고
+    상태기계의 나머지는 동일한 통제 비교가 된다.
     """
+    if self.speed_selector is not None:
+      s = float(self.speed_selector(env, contact_len, arm))
+      return float(np.clip(s * self._backoff, self._min_lead(), None))
     if self.explore_range is not None:
       return float(np.clip(
           self._rng.uniform(*self.explore_range) * self._backoff,

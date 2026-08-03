@@ -116,6 +116,14 @@ def main():
   ap.add_argument('--patience', type=int, default=12)
   ap.add_argument('--weight-decay', type=float, default=1e-4)
   ap.add_argument('--no-early-stop', action='store_true')
+  ap.add_argument('--success-only', action='store_true',
+                  help=('실패 트랜지션을 학습에서 제외한다 — STG 예측기를 '
+                        '성공 데모만으로 학습하는 기존 관례(SI-EFM, '
+                        'dp_policy.collect_rollouts)를 같은 아키텍처로 재현하는 '
+                        '비교군이다. 이렇게 학습하면 실패 bin이 데이터에 아예 '
+                        '없으므로 P(성공)이 구조적으로 ~1로 붕괴하고, 모델은 '
+                        '"성공한다고 치면 몇 스텝"만 말할 수 있게 된다. '
+                        '검증셋은 (공정 비교를 위해) 실패 포함 그대로 둔다.'))
   ap.add_argument('--tag', default='')
   args = ap.parse_args()
 
@@ -148,12 +156,18 @@ def main():
   ttg = data['time_to_success']
   is_succ = data['is_success']
 
-  tr_x = jnp.asarray(x_all[~val_mask]); tr_ttg = jnp.asarray(ttg[~val_mask])
-  tr_succ = jnp.asarray(is_succ[~val_mask])
+  # 학습 마스크에서만 실패를 뺀다. 검증셋은 양쪽 모델이 **같은** 것을 보도록
+  # 실패를 포함한 채로 둔다 — 그래야 "성공만으로 배운 모델이 실패를 못
+  # 맞힌다"가 같은 척도 위에서 드러난다.
+  tr_mask = ~val_mask
+  if args.success_only:
+    tr_mask = tr_mask & is_succ
+  tr_x = jnp.asarray(x_all[tr_mask]); tr_ttg = jnp.asarray(ttg[tr_mask])
   va_x = jnp.asarray(x_all[val_mask]); va_ttg = jnp.asarray(ttg[val_mask])
   va_succ = jnp.asarray(is_succ[val_mask])
   print(f'train {tr_x.shape[0]} / val {va_x.shape[0]} transitions '
-        f'(val {len(val_eps)} eps, 입력 {tr_x.shape[-1]}차원 = 관측+액션)')
+        f'(val {len(val_eps)} eps, 입력 {tr_x.shape[-1]}차원 = 관측+액션)'
+        + ('  [success-only 학습]' if args.success_only else ''))
 
   XDIM = int(tr_x.shape[-1])
   apply_fn, init_fn = build_qstg_net((256, 256, 256), XDIM, NUM_BINS)
@@ -240,6 +254,7 @@ def main():
         'meta': {
             'env': 'grasp_carry/GraspCarry2D (action-conditioned)',
             'data': args.data, 'steps': args.steps, 'seed': args.seed,
+            'success_only': bool(args.success_only),
             'best_step': int(best['step']), 'weight_decay': args.weight_decay,
             'val_nll': float(best['nll']), 'val_succ_acc': float(best['succ_acc']),
             'val_mae': float(best['mae']),
