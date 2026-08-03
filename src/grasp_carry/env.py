@@ -137,6 +137,8 @@ class GraspCarry2D:
     self._t = 0
     self._n_drops = 0
     self._was_held = False
+    self._not_held_run = 0
+    self._streak_had_grip = False
     self._outcome = 'running'
 
   # ================================================================ 에피소드
@@ -167,6 +169,8 @@ class GraspCarry2D:
     self._t = 0
     self._n_drops = 0
     self._was_held = False
+    self._not_held_run = 0
+    self._streak_had_grip = False
     self._outcome = 'running'
 
     frame = self.observe_frame()
@@ -276,11 +280,11 @@ class GraspCarry2D:
         if base.velocity.y > 0.0:
           base.velocity = (base.velocity.x, 0.0)
 
-      # 5) 손가락 속도 제한
+      # 5) 손가락 대칭 구속(단일 액추에이터) + 속도 제한
+      self.gripper.enforce_symmetry()
       self.gripper.clamp_finger_speed()
 
-      self._track_drop()
-
+    self._track_drop()
     self._t += 1
     self._history.append(self.observe_frame())
 
@@ -299,13 +303,34 @@ class GraspCarry2D:
     return self._stacked_obs(), reward, terminated, truncated, self._info()
 
   def _track_drop(self) -> None:
-    """공중에서 파지가 풀린 횟수를 센다(진단용)."""
+    """공중에서 파지가 풀린 횟수를 센다(진단용).
+
+    **제어 스텝 경계에서 2번 연속 안 잡혀야** 센다(스트릭의 두 번째 스텝에서
+    1회만 카운트). 1회 시도(제어 스텝당 1회
+    평가, substep 루프 밖으로 옮김)로는 부족했다: `enforce_symmetry()`가
+    substep마다 손가락 위치를 직접 되밀기 때문에, 그 substep에서 접촉
+    재검출이 반대쪽 패드만 놓치는 경우가 실측된다(시드 3: t=29 held →
+    t=30 안 잡힘 → t=31 다시 held, 그 사이 블록은 0.005mm도 안 움직였다).
+    반면 진짜 낙하는 다음 스텝에도 이어진다(시드 11: t=9~10 연속으로 안
+    잡히고 블록이 자유낙하 속도로 떨어진다). 정책의 `_watch_drop`도 이미
+    같은 "2연속 제어 스텝" 기준으로 반응(감속·재접근)하므로, 진단 카운터를
+    거기 맞추면 정책이 실제로 반응하는 사건과 정확히 같은 것을 센다.
+    """
     held = self.is_held()
-    if self._was_held and not held:
+    if held:
+      self._not_held_run = 0
+      self._was_held = True
+      return
+    if self._not_held_run == 0:
+      # 안 잡힌 스트릭이 막 시작됐다 — 카운트 여부는 스트릭 시작 **직전**에
+      # 실제로 잡고 있었는지로 정한다(처음부터 못 잡은 것과 구분).
+      self._streak_had_grip = self._was_held
+    self._not_held_run += 1
+    if self._not_held_run == 2 and self._streak_had_grip:
       bottom = self._block_bottom_y()
       if bottom < self._support_y(float(self.block_body.position.x)) - 5.0:
         self._n_drops += 1
-    self._was_held = held
+    self._was_held = False
 
   # ================================================================== 기구학
   def max_descend_y(self, x: Optional[float] = None) -> float:

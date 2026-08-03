@@ -214,6 +214,45 @@ class Gripper:
     self.base.torque = float(
         np.clip(torque, -cfg.ee_torque_max, cfg.ee_torque_max))
 
+  def enforce_symmetry(self) -> None:
+    """두 손가락을 개폐 축에서 **좌우 대칭**으로 되돌린다. 매 substep 직후 호출.
+
+    실제 평행죠 그리퍼는 단일 액추에이터(랙&피니언/리드스크류)라 좌우 손가락이
+    기구적으로 묶여 있어 `x_L = -x_R`가 항상 성립한다. 그런데 여기서는 손가락이
+    각각 독립 DYNAMIC 바디이고 `GrooveJoint`는 베이스에만 묶으므로, 좌우를
+    이어주는 구속이 없다. 그 상태에서는 블록이 한쪽 패드를 밀면 **그쪽만**
+    미끄러져 손가락 쌍 전체가 옆으로 밀린다(실측: 베이스 로컬 x의 합이 0이 아닌
+    40~48mm까지 벌어짐). 기구학적으로 불가능한 상태다.
+
+    구현은 공통모드 투영이다. 베이스 로컬 개폐 축에서 두 손가락의 **평균**
+    (= 공통모드)을 위치·속도 모두에서 제거하고, 차동모드(개도)는 건드리지
+    않는다. 두 손가락 질량이 같으므로 속도 공통모드를 없애면 축 방향 운동량
+    `2*m*c`가 남는데, 이것을 **베이스에 넘겨준다** — 랙&피니언 하우징이 받는
+    반작용에 해당하며, 이렇게 해야 "블록이 패드를 밀면 그리퍼 전체가 밀린다"는
+    올바른 반응이 나온다.
+    """
+    axis = pymunk.Vec2d(math.cos(self.base.angle), math.sin(self.base.angle))
+    fl, fr = self.fingers
+
+    # --- 위치: 로컬 x의 평균만큼 두 손가락을 함께 되민다(구속 드리프트 보정) ---
+    xl = self.base.world_to_local(fl.position).x
+    xr = self.base.world_to_local(fr.position).x
+    common = 0.5 * (xl + xr)
+    if common != 0.0:
+      fl.position = fl.position - axis * common
+      fr.position = fr.position - axis * common
+
+    # --- 속도: 축 방향 공통모드를 제거하고 그 운동량을 베이스로 넘긴다 ---
+    vl = (fl.velocity - self.base.velocity).dot(axis)
+    vr = (fr.velocity - self.base.velocity).dot(axis)
+    cv = 0.5 * (vl + vr)
+    if cv != 0.0:
+      fl.velocity = fl.velocity - axis * cv
+      fr.velocity = fr.velocity - axis * cv
+      # 손가락 2개가 잃은 축 방향 운동량을 베이스가 그대로 받는다.
+      self.base.velocity = self.base.velocity + axis * (
+          2.0 * self.cfg.finger_mass * cv / self.base.mass)
+
   def clamp_finger_speed(self) -> None:
     """손가락의 베이스 대비 상대 속도를 `cfg.finger_speed_max`로 제한한다.
 

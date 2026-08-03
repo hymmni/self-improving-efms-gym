@@ -147,3 +147,44 @@ def test_finger_polygons_are_triangles_with_vertical_inner_edge():
       inner = xs[:2]                          # 오른손가락: 안쪽 = 왼쪽 두 점
     assert inner[0] == pytest.approx(inner[1], abs=1e-6)
     assert abs(inner[0] - cx) == pytest.approx(g.gap / 2.0, abs=1e-6)
+
+
+# ------------------------------------------------------ 7. 좌우 대칭(단일 액추에이터)
+def test_fingers_stay_symmetric_when_one_side_is_pushed():
+  """한쪽 손가락만 옆으로 밀어도 좌우 대칭(x_L = -x_R)이 유지된다.
+
+  실제 평행죠 그리퍼는 단일 액추에이터라 좌우가 기구적으로 묶여 있다. 이
+  구속이 없으면 블록이 한쪽 패드를 밀 때 그쪽만 미끄러져 손가락 쌍 전체가
+  옆으로 밀린다(실측: 롤아웃 중 베이스 로컬 x의 합이 40~48mm까지 벌어졌다).
+  """
+  cfg, space, g = build()
+  axis = pymunk.Vec2d(1.0, 0.0)               # base.angle = 0
+  worst = 0.0
+  for i in range(400):
+    g.apply_grip(closing=True)
+    if i < 200:                               # 오른손가락만 바깥으로 민다
+      g.fingers[1].apply_force_at_local_point((5_000.0, 0.0), (0.0, 0.0))
+    space.step(cfg.physics_dt)
+    g.enforce_symmetry()
+    g.clamp_finger_speed()
+    xl = g.base.world_to_local(g.fingers[0].position).x
+    xr = g.base.world_to_local(g.fingers[1].position).x
+    worst = max(worst, abs(xl + xr))
+  assert worst <= 1e-6, f'좌우 비대칭 {worst:.3f}mm'
+
+
+def test_symmetry_projection_transfers_momentum_to_the_base():
+  """공통모드 속도를 지울 때 그 운동량이 사라지지 않고 베이스로 넘어간다.
+
+  그냥 지우면 "블록이 패드를 밀어도 그리퍼가 안 밀리는" 비물리가 된다.
+  """
+  cfg, space, g = build()
+  g.base.velocity = (0.0, 0.0)
+  v = 100.0
+  for f in g.fingers:                         # 두 손가락 모두 +x로 = 순수 공통모드
+    f.velocity = (v, 0.0)
+  g.enforce_symmetry()
+  expected = 2.0 * cfg.finger_mass * v / g.base.mass
+  assert g.base.velocity.x == pytest.approx(expected, rel=1e-9)
+  for f in g.fingers:                         # 손가락의 축 방향 상대속도는 0
+    assert (f.velocity - g.base.velocity).x == pytest.approx(-expected, abs=1e-9)
