@@ -72,6 +72,14 @@ _FINGER_CLEAR = 3.0
 _SAG_GAIN = 0.6
 # 베이스가 올라갈 수 있는 최고 높이(mm) — 월드 밖으로 나가지 않게 한다.
 _CEILING_Y = 20.0
+# 착지(놓기) 중 연직 리드에 곱하는 계수. `_lift_lead`(최악 처짐 + 명목 리드,
+# 최대 41mm/스텝 = 411mm/s)를 그대로 쓰면 회전 토크는 안 만들지만(연직
+# 가속은 지렛대와 나란해 모멘트가 없다) 바닥까지 거의 최고 속도로 내려가다
+# PD 감쇠가 마지막 한두 스텝에 몰아서 죽여 "떨어뜨리다 급정지"로 보인다
+# (실측: 235.8→144.2mm까지 8스텝을 -11.8mm/스텝로 가다 141.2에서 급정지).
+# 이 계수는 놓기 동작의 시각적 부드러움만 바꾸고 회전 안전 마진에는 관여하지
+# 않는다(연직 리드는애초에 토크 여유 계산에 들어가지 않는다).
+_TOUCHDOWN_LEAD_FRAC = 0.35
 # 월드 양끝 벽에서 띄울 여유(mm). `_feasible_x` 참고 — 활짝 벌린 손가락이
 # 벽에 닿으면 그리퍼가 마찰로 고착된다.
 _WALL_MARGIN = 3.0
@@ -131,7 +139,9 @@ class ScriptedCarryPolicy:
   def __init__(self, speed: Optional[float] = None, allow_regrasp: bool = True,
                privileged: bool = False, risk_alpha: float = 0.1,
                torque_safety: float = 1.0, drop_backoff: float = 0.6,
-               config: Optional[CarryConfig] = None):
+               config: Optional[CarryConfig] = None,
+               explore_range: Optional[Tuple[float, float]] = None,
+               rng: Optional[np.random.Generator] = None):
     self.cfg = config or CarryConfig()
     cfg = self.cfg
     self.speed = float(speed) if speed is not None else cfg.max_accel / cfg.k_p
@@ -140,6 +150,16 @@ class ScriptedCarryPolicy:
     self.risk_alpha = float(risk_alpha)
     self.torque_safety = float(torque_safety)
     self.drop_backoff = float(drop_backoff)
+    # `explore_range`가 주어지면 `_speed_cap()`의 회전 저항 공식(= 안 떨어뜨리는
+    # 최대 속도를 계산하는 식)을 완전히 무시하고, 매 파지마다 이 구간에서
+    # 균일 샘플한 속도를 **그대로** 강제한다. 물리식은 정의상 항상 안전한
+    # 값만 내놓으므로(그게 그 식의 목적이다), `self.speed`를 아무리 올려도
+    # 위쪽 캡으로만 작동해 얕은 파지에서는 절대 위험 영역에 들어가지 않는다
+    # (실측: 캡을 12.5~200으로 바꿔도 얕은 파지의 실제 속도가 0.538mm로
+    # 고정됐다). 위험한 조합(얕은 파지 + 빠른 이동)이 실제로 데이터에 남으려면
+    # 이 안전장치를 데이터 수집 시에는 꺼야 한다.
+    self.explore_range = explore_range
+    self._rng = rng if rng is not None else np.random.default_rng()
 
     # 설계 범위의 가장 무거운 블록에서 생기는 처짐(mm). 연직 리드는 이보다
     # 커야 어떤 블록이든 들어올릴 수 있다.
@@ -318,7 +338,7 @@ class ScriptedCarryPolicy:
 
   def _phase_relocate(self, env):
     """재파지 자리로 옮겨 내려놓는다. 끝나면 다시 `approach`부터 한다."""
-    if self._sub in ('lift', 'across'):
+    if self._sub == 'lift':
       return self._transit(env, then=None)
     return self._settle(env, then='approach')
 
@@ -327,15 +347,17 @@ class ScriptedCarryPolicy:
     return self._settle(env, then='verify')
 
   def _transit(self, env, then: Optional[str]):
-    """`lift` -> `across`. 도착하면 `then`(None이면 같은 phase의 `lower`)로."""
+    """대각선(곡선)으로 목적지까지 옮긴다. 도착하면 `then`(None이면 같은 phase의 `lower`)로.
+
+    다 들어올린 다음 건너가는 게 아니라, 수평·연직 목표를 **동시에** 준다 —
+    `_goto`가 두 축을 독립된 리드로 각각 클립하므로 자연스러운 대각선 궤적이
+    나온다. 벽 충돌 걱정은 없다: `env.step`의 하드 스톱이 현재 x 기준
+    `max_descend_y(x)`로 매 substep 이미 막고 있다(동적 베이스 오버슛 처리와
+    같은 장치) — 정책이 아직 덜 오른 채로 옆으로 밀어붙여도, 그 x에서 박스
+    벽이 요구하는 높이보다 낮게는 못 내려간다.
+    """
     s = self._safe_speed(env)
     ty = self._travel_y_hold(env)
-    if self._sub == 'lift':
-      if self.ey <= ty + _REACH_TOL:
-        self._sub = 'across'
-        return None
-      return self._goto(env, self._base_x_for_block(env, self.bx), ty, s,
-                        _CLOSE)
     tx = self._base_x_for_block(env, self._dest_x)
     # 블록이 목적지에 닿았거나, **베이스가 이미 낼 수 있는 데까지 다 낸** 경우
     # 다음 단계로 간다. 뒤 조건이 없으면, 블록이 그립 안에서 비켜 잡힌 채로
@@ -362,8 +384,9 @@ class ScriptedCarryPolicy:
         self._hold_x = self.ex
         return None
       ty = self.ey + (self._dest_floor - self.block_bottom)
+      vlead = max(self._min_lead(), self._lift_lead * _TOUCHDOWN_LEAD_FRAC)
       return self._goto(env, self._base_x_for_block(env, self._dest_x), ty,
-                        self._safe_speed(env), _CLOSE)
+                        self._safe_speed(env), _CLOSE, vlead=vlead)
 
     # release: 손가락을 열고, 블록이 자리를 잡으면 위로 물러난다. x는 **고정된**
     # 값으로 잡는다 — 현재 위치를 그대로 되돌려주면, 놓다가 기울어진 블록이
@@ -417,13 +440,14 @@ class ScriptedCarryPolicy:
     return np.array([tx, ty, 0.0, grip], dtype=np.float32)
 
   def _goto(self, env, tx: float, ty: float, s: float,
-            grip: float) -> np.ndarray:
+            grip: float, vlead: Optional[float] = None) -> np.ndarray:
     """목표를 현재 위치에서 축별로 제한한 리드만큼 앞에 둔 액션.
 
-    수평 리드는 `s`(회전 토크 여유에서 유도된 값), 연직 리드는 `_lift_lead`로
-    따로 제한한다. 회전 모멘트를 만드는 것은 **수평** 가속뿐이고(지렛대가 연직
-    방향이라 연직 관성력은 모멘트를 만들지 않는다), 연직에는 대신 하중 처짐이라는
-    다른 제약이 있기 때문이다.
+    수평 리드는 `s`(회전 토크 여유에서 유도된 값), 연직 리드는 기본
+    `_lift_lead`로 따로 제한한다. 회전 모멘트를 만드는 것은 **수평** 가속뿐이고
+    (지렛대가 연직 방향이라 연직 관성력은 모멘트를 만들지 않는다), 연직에는
+    대신 하중 처짐이라는 다른 제약이 있기 때문이다. `vlead`를 주면 그 값을
+    대신 쓴다(놓기 동작을 완만하게 하는 용도 — 회전 안전과는 무관하다).
 
     `grip`이 닫힘이면 관측되는 높이 오차로 처짐을 적분 보상한다.
     """
@@ -435,7 +459,8 @@ class ScriptedCarryPolicy:
       ty = ty - self._sag_ff
     ty = max(ty, _CEILING_Y)
     dx = float(np.clip(tx - self.ex, -s, s))
-    dy = float(np.clip(ty - self.ey, -self._lift_lead, self._lift_lead))
+    vl = self._lift_lead if vlead is None else vlead
+    dy = float(np.clip(ty - self.ey, -vl, vl))
     return self._act(self.ex + dx, self.ey + dy, grip)
 
   def _stalled(self) -> bool:
@@ -583,11 +608,19 @@ class ScriptedCarryPolicy:
     return (m_lo + (1.0 - a) * (m_hi - m_lo), mu_lo + a * (mu_hi - mu_lo))
 
   def _speed_cap(self, env, contact_len: float, arm: float) -> float:
-    """이 파지에서 안전한 수평 명령 리드 `s`(mm)의 상한 — 모듈 문서의 식 (2).
+    """이 파지에서 쓸 수평 명령 리드 `s`(mm) — 모듈 문서의 식 (2)에서 유도.
 
     `contact_len`이 0이거나 마찰 트랙션이 전부 중력을 붙드는 데 쓰이면 회전
     여유가 없으므로 최소값을 준다.
+
+    `explore_range`가 켜져 있으면 이 물리식 전체를 건너뛰고 그 구간에서
+    무작위 속도를 강제한다(위 클래스 문서 참고) — "안전한 상한"이 아니라
+    "이번 파지에 실제로 쓸 값"이 된다.
     """
+    if self.explore_range is not None:
+      return float(np.clip(
+          self._rng.uniform(*self.explore_range) * self._backoff,
+          self._min_lead(), None))
     cfg = self.cfg
     mass, mu = self._hidden(env)
     if contact_len <= 0.0:
