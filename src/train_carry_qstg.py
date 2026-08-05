@@ -99,6 +99,22 @@ def succ_mean_quantile(succ_probs, bin_vals, q=0.8):
   return mean, quant
 
 
+def succ_cvar(succ_probs, bin_vals, alpha=0.8):
+  """CVaR_alpha — 최악 (1-alpha) 구간(꼬리)만 재정규화한 기댓값.
+
+  `jnp.argmax(cdf>=q)`(분위수)는 계단함수라 그래디언트가 안 흐른다. 여기서는
+  각 bin이 [alpha, 1] 구간과 겹치는 확률질량만 `jnp.clip`으로 뽑아 쓴다 —
+  clip은 미분 가능(경계에서 subgradient)하므로 액터를 역전파로 학습시키는
+  용도로 쓸 수 있다.
+  """
+  cdf = jnp.cumsum(succ_probs, axis=-1)
+  cdf_prev = cdf - succ_probs
+  overlap = jnp.clip(cdf, alpha, 1.0) - jnp.clip(cdf_prev, alpha, 1.0)
+  mass = jnp.sum(overlap, axis=-1)
+  cvar = jnp.sum(overlap * bin_vals[None, :], axis=-1) / jnp.maximum(mass, 1e-6)
+  return cvar
+
+
 class TrainState(NamedTuple):
   params: dict
   opt_state: optax.OptState
