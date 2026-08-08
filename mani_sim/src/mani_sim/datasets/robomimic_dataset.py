@@ -107,6 +107,29 @@ class RobomimicSequenceDataset(torch.utils.data.Dataset):
             labels[index] = cache[demo_id][index_in_demo]
         return labels
 
+    def get_time_to_success(self):
+        """샘플(윈도우)별 time-to-success 라벨 — 이 윈도우의 행동 청크가 시작하는
+        프레임(index_in_demo)에서 그 데모 끝까지 남은 스텝 수. robomimic PH 데모는
+        전부 성공 시연이라는 전제(에피소드 = 성공까지의 경로) 하에, 논문 라벨링
+        규칙(L-1-t, phases/4-diffusion-si/step1.md 참고)을 그대로 적용한다.
+        demo 길이는 hdf5의 f"data/{demo_id}/actions" 첫 축 길이로 잰다(모든 robomimic
+        데모에 있는 표준 필드 — get_action_mode_first_frame이 action_mode로 하는 것과
+        같은 방식으로 hdf5_file에서 직접 읽는다).
+
+        Returns:
+            np.ndarray: (N,) int64, N=len(self).
+        """
+        seq = self._seq_dataset
+        cache = {}
+        labels = np.empty(len(seq), dtype=np.int64)
+        for index in range(len(seq)):
+            demo_id, index_in_demo = self._demo_id_and_index_in_demo(index)
+            if demo_id not in cache:
+                cache[demo_id] = seq.hdf5_file[f"data/{demo_id}/actions"].shape[0]
+            demo_len = cache[demo_id]
+            labels[index] = demo_len - 1 - index_in_demo
+        return labels
+
     def get_action_mode_window(self, width):
         """샘플(윈도우)별 앞 width개 프레임의 action_mode (N, width).
         zarr_dataset.ZarrSequenceDataset.get_action_mode_window와 동일 계약 —

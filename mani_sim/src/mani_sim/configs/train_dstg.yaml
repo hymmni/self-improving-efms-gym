@@ -1,0 +1,26 @@
+# DstgPredictor(d(o,g) := E[steps-to-go | o]) 학습 — task/policy는 policy_ckpt 옆
+# run_config.yaml에서 그대로 읽으므로(scripts/train_dstg.py) task=/policy= defaults가 없다.
+
+policy_ckpt: ???
+hdf5_path: ???
+out: outputs/dstg/predictor.pt
+
+seed: 0
+device: cuda
+num_workers: 2
+
+batch_size: 64
+lr: 1.0e-4
+weight_decay: 1.0e-6
+num_epochs: 30
+log_every: 50
+head_hidden: [256, 256]
+
+# 에피소드(데모) 단위 val 분할 — 무작위 transition 분할이 아니다(phases/4-diffusion-si/step1.md
+# 관례 그대로, phases/5-mani-sim-ddpo/step1.md 참고).
+val_fraction: 0.2
+split_seed: 0
+
+hydra:
+  run:
+    dir: outputs/dstg/hydra/${now:%Y%m%d-%H%M%S}
