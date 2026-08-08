@@ -128,6 +128,18 @@ class StgReward:
           'reward.threshold = s 로 설정하라.')
     return self.d(obs_raw) <= self.threshold
 
+  def mean_std(self, obs_raw: np.ndarray) -> tuple:
+    """예측 분포의 평균 μ(o)와 표준편차 σ(o)를 함께 낸다(references/context_8.md
+    분석용 — d()는 statistic에 따라 mean/cvar 중 하나만 내므로 σ가 따로 필요).
+    fail_bin이 있는 체크포인트는 d()와 동일하게 fail_value로 치환한 bin_vals를
+    쓴다(같은 분포 위에서 일관되게). 반환: (mu, sigma) 각 (B,) float.
+    """
+    probs = self._probs(obs_raw)
+    bv = np.asarray(self._bin_vals)
+    mu = np.sum(probs * bv[None, :], axis=-1)
+    var = np.sum(probs * (bv[None, :] - mu[:, None]) ** 2, axis=-1)
+    return mu, np.sqrt(np.maximum(var, 0.0))
+
 
 def _val_episode_ids(data: dict, seed: int) -> set:
   """예측기 체크포인트 학습 시 쓴 것과 동일한 10% 에피소드 val 분할을

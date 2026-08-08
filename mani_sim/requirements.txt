@@ -1,0 +1,53 @@
+# mani_sim 고정 의존성 (재현성 단일 출처). 버전 근거: docs/plan.md M0.
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+torch==2.5.1+cu121
+torchvision==0.20.1+cu121
+
+# 시뮬레이션 벤치마크
+# robomimic은 PyPI(0.3.0)가 아닌 git v0.4.0 태그 고정.
+# 이유: v0.4.0은 robomimic __init__.py의 v1.5 데이터셋 레지스트리(HF 호스팅)를 이미 포함하면서도
+# master/v0.5.0에서 추가된 lang_utils.py(import 시점에 CLIP 모델 자동 다운로드)와
+# diffusion_policy.py(diffusers==0.11.1 요구)가 없어 우리 DP 구현(diffusers 0.30.3)과 충돌하지 않음.
+robosuite==1.5.1
+robomimic @ git+https://github.com/ARISE-Initiative/robomimic.git@v0.4.0
+# mujoco==3.2.3 고정 (robosuite==1.5.1의 최소요구버전과 동일).
+# 이유: robosuite 1.5.1의 controller.py가 mujoco.mj_fullM(model, dst, qM_sparse)로 호출하는데
+# 이는 구 API 시그니처. mujoco 3.10.0(확인 시점 latest)은 mj_fullM(model, data, dst)로 바뀌어
+# TypeError 발생 (M0에서 실행해 확인 — 3.2.3은 동작 확인, 3.2.4~3.9.x 사이 정확한 변경 지점은 미확인).
+mujoco==3.2.3
+
+# Diffusion Policy 구현 (자체 포팅, flare/lerobot 코드는 참조만 하고 import하지 않음)
+diffusers==0.30.3
+einops==0.8.1
+
+# 설정·실험 관리
+hydra-core==1.3.2
+omegaconf==2.3.0
+wandb>=0.24.2
+
+# PICO VR 개입 수집(collect_intervention device=pico)용 — 하드웨어 전용, 선택 설치.
+#   xrobotoolkit_sdk: PICO 앱과 통신하는 XRoboToolkit SDK 바인딩(PyPI 아님, 별도 설치).
+#   scipy: pico_intervention의 pose→delta 변환. robosuite/robomimic가 이미 끌어오지만 명시.
+# 키보드 개입·학습·평가만 쓰면 불필요.
+scipy
+
+# 데이터·시각화
+h5py
+huggingface_hub
+imageio>=2.37.3
+imageio-ffmpeg
+av>=15.1.0
+opencv-python>=4.13.0.92
+matplotlib
+tqdm
+
+# OpenVLA(policy=openvla, 2026-07-17) — 선택 설치, bc/diffusion만 쓰면 불필요.
+# 버전 정확히 고정 필요(최신판들끼리도 서로 안 맞음, 전부 실행하며 실측 확인):
+#   transformers 최신판(5.x)엔 AutoModelForVision2Seq 자체가 없어짐 → 4.40.1로 내려야 함.
+#   peft 최신판은 그 구버전 transformers와 안 맞음(EncoderDecoderCache import 실패) → 0.11.1.
+#   timm 최신판은 OpenVLA 자체 버전가드(>=0.9.10,<1.0.0)에 걸림 → 0.9.16.
+transformers==4.40.1
+peft==0.11.1
+timm==0.9.16
+accelerate

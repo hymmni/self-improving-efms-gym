@@ -51,7 +51,6 @@ from src.grasp_carry.env import GraspCarry2D
 
 # From: run_bc_stg_guided.py load_bc_policy() — 대상 체크포인트가 학습된 고정 구조.
 LAYER_SIZES = (256, 256, 256)
-DRIFT_DATA_PATH = 'data/grasp_carry_demos_v3.pkl'
 DRIFT_N_OBS = 256
 DRIFT_SEED = 12345
 DRIFT_SAMPLE_SEED = 999_999
@@ -206,8 +205,8 @@ def _assert_dist_head_frozen(params_before, params_after, dist_head_keys):
 
 # --------------------------------------------------------------------- 진단
 
-def _load_drift_obs(frame_mean, frame_std):
-  with open(DRIFT_DATA_PATH, 'rb') as fp:
+def _load_drift_obs(data_path, frame_mean, frame_std):
+  with open(data_path, 'rb') as fp:
     data = pickle.load(fp)
   frames = data['observation']['frame']
   rng = np.random.default_rng(DRIFT_SEED)
@@ -261,13 +260,19 @@ def main():
 
   reward = StgReward(args.d_ckpt, statistic=args.statistic,
                      cvar_alpha=args.cvar_alpha)
-  with open(DRIFT_DATA_PATH, 'rb') as fp:
+  # reward.meta['data']를 쓴다(하드코딩된 별도 경로 대신) — 캘리브레이션/드리프트
+  # 진단이 항상 이 --d-ckpt가 실제로 학습된 데이터와 일치하게 강제하기 위함.
+  # 예전엔 DRIFT_DATA_PATH가 'data/grasp_carry_demos_v3.pkl'로 고정돼 있어서,
+  # v4/v5 계열 d-ckpt를 쓸 때도 v3로 캘리브레이션해 문턱이 완전히 어긋났었다
+  # (f1=0.151 — --termination learned가 이 잘못된 문턱을 파고들며 붕괴, 2026-08-09).
+  calib_data_path = reward.meta['data']
+  with open(calib_data_path, 'rb') as fp:
     calib_data = pickle.load(fp)
   val_eps = _val_episode_ids(calib_data, seed=reward.meta['seed'])
   best_s, calib_metrics = calibrate_threshold(reward, calib_data, val_eps)
   reward.threshold = best_s
   print(f'[calib] threshold s={best_s:.3f}  f1={calib_metrics["f1"]:.3f}  '
-        f'(held-out {len(val_eps)} episodes)')
+        f'(data={calib_data_path}, held-out {len(val_eps)} episodes)')
 
   cfg = CarryConfig()
   env = GraspCarry2D(cfg)
@@ -277,7 +282,7 @@ def main():
   train_step = build_train_step(ddpo, dist_head_keys)
   sample_fn = jax.jit(ddpo.sample_with_trace)
 
-  drift_obs_n = _load_drift_obs(frame_mean, frame_std)
+  drift_obs_n = _load_drift_obs(calib_data_path, frame_mean, frame_std)
 
   rng_key = jax.random.PRNGKey(args.seed0 + 1_000_000)   # 정책 샘플링 전용 스트림
   env_seed_counter = args.seed0
