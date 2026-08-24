@@ -56,6 +56,7 @@ def collect(n_episodes: int, explore_range: Optional[Tuple[float, float]] = None
             allow_regrasp: bool = True, speed: Optional[float] = None,
             keep_failures: bool = False, torque_safety: float = 1.0,
             action_noise_std: float = 0.0,
+            detour_prob: float = 0.0, detour_steps: int = 20,
             config: Optional[CarryConfig] = None) -> dict:
   """`speed`가 `_lift_lead`(연직 리드 = 최악 처짐 + speed)를 정한다 — `explore_range`는
   수평 채널만 우회하므로, 연직 슬립(들어올릴 때 그립력이 못 버티는 것)까지
@@ -68,16 +69,31 @@ def collect(n_episodes: int, explore_range: Optional[Tuple[float, float]] = None
   범주형 분포 하나에서 `P(성공) = 1 - P(마지막 bin)`과, 성공 bin만
   재정규화한 "성공한다면 몇 스텝"을 둘 다 뽑을 수 있다(성공률과 성공 분포
   quantile을 같은 모델에서 얻는 방법 — 실패를 배제하던 기존 기본값과 달리
-  조건 A를 액션-조건부로 검증하려면 이게 필요하다)."""
+  조건 A를 액션-조건부로 검증하려면 이게 필요하다).
+
+  `detour_prob`: 이 확률로 뽑힌 에피소드는 파지 직후(carry phase 진입 시점)
+  `detour_steps`스텝 동안 정책 대신 작업공간 내 완전 무작위 지점(tx, ty)을
+  그대로 명령한다 — 예측기가 한 번도 못 본 "이상한" 상태를 지나가게 만드는
+  것. `ScriptedCarryPolicy`는 매 스텝 현재 상태만 보고 목표를 다시 계산하는
+  순수 피드백 제어기이므로(_transit이 self._dest_x/_dest_floor를 향해
+  매번 다시 계산), 우회가 끝나고 제어권을 돌려주면 어디서 시작하든 정상
+  종료(성공)까지 이어간다 — 별도의 FSM 조정이 필요 없다. 우회 중에도
+  `policy(env)`는 계속 호출한다(내부 낙하감지 등 상태를 놓치지 않기 위해),
+  다만 실제 액션만 무작위 목표로 덮어쓴다. env.step의 하드스톱이 매
+  substep마다 물리적으로 불가능한 목표(벽 뚫기 등)를 이미 걸러내므로
+  안전하다."""
   cfg = config or CarryConfig()
   env = GraspCarry2D(cfg)
   rng = np.random.default_rng(explore_seed)
 
   obs_all, act_all, ttg_all, eid_all = [], [], [], []
   contact_all, held_all, speed_all, succ_all = [], [], [], []
-  mass_all, mu_all = [], []
+  mass_all, mu_all, detour_all = [], [], []
   outcomes: dict = {}
   kept = 0
+  n_detour_triggered = 0
+
+  half = cfg.gripper_outer_width / 2.0
 
   for e in range(n_episodes):
     # 정책 인스턴스를 매 에피소드 새로 만들되, 탐색용 RNG는 실행 전체에서 하나만
@@ -88,9 +104,36 @@ def collect(n_episodes: int, explore_range: Optional[Tuple[float, float]] = None
     obs, info = env.reset(seed=seed0 + e)
     policy.reset()
 
+    do_detour = detour_prob > 0.0 and rng.random() < detour_prob
+    detour_armed = do_detour       # 아직 발동 안 함(carry phase 진입 대기)
+    detour_remaining = 0
+    detour_target = None
+    detour_flags = []
+
     obs_l, act_l, contact_l, held_l, speed_l = [obs], [], [], [], []
     for _ in range(cfg.max_steps):
       a = policy(env)
+      in_detour = False
+      if detour_armed and policy.phase == 'carry' and detour_remaining == 0:
+        # 파지를 막 끝내고 운반을 시작하는 순간 — 여기서 우회를 발동한다.
+        # y는 floor_y-20까지 무작위로 뽑으면 안 된다 — env.step의 하드스톱이
+        # max_descend_y(tx)(박스 벽/rim에 막히는 실제 물리 한계)로 매 substep
+        # 목표를 잘라버리므로, 그 한계보다 깊은 목표를 주면 그리퍼가 벽에
+        # 눌린 채 그 자리에 멈춰 서서 "우회"가 실제로는 제자리 정지가 된다
+        # (2026-08-24 실측으로 발견 — tx가 소스박스 중심 근처일 때 특히 심함).
+        # tx를 먼저 뽑고 그 x에서 실제로 도달 가능한 범위 안에서만 ty를 뽑는다.
+        tx = float(rng.uniform(half, cfg.world_width - half))
+        max_ty = env.max_descend_y(tx)
+        ty = float(rng.uniform(20.0, max(20.0 + 1.0, max_ty - 5.0)))
+        detour_target = (tx, ty)
+        detour_remaining = detour_steps
+        detour_armed = False
+        n_detour_triggered += 1
+      if detour_remaining > 0:
+        tx, ty = detour_target
+        a = np.array([tx, ty, 0.0, 1.0], dtype=np.float32)  # 계속 쥔 채로
+        detour_remaining -= 1
+        in_detour = True
       if action_noise_std > 0.0:
         # (x, y)만 흔든다 — theta는 항상 0, grip은 0.5 문턱의 이진 명령이라
         # 연속 노이즈를 섞으면 의도 없이 grip 상태가 뒤집힐 수 있다. 정책이
@@ -103,6 +146,7 @@ def collect(n_episodes: int, explore_range: Optional[Tuple[float, float]] = None
       contact_l.append(env.contact_length())
       held_l.append(bool(env.is_held()))
       speed_l.append(float(policy._speed_hold))
+      detour_flags.append(in_detour)
       obs, _, terminated, truncated, info = env.step(a)
       if terminated or truncated:
         break
@@ -129,6 +173,7 @@ def collect(n_episodes: int, explore_range: Optional[Tuple[float, float]] = None
     eid_all.append(np.full(L, kept, dtype=np.int32))
     mass_all.append(np.full(L, info['mass'], dtype=np.float32))
     mu_all.append(np.full(L, info['friction'], dtype=np.float32))
+    detour_all.append(np.array(detour_flags[:L], dtype=bool))
     kept += 1
 
   data = {
@@ -159,6 +204,11 @@ def collect(n_episodes: int, explore_range: Optional[Tuple[float, float]] = None
                      else np.zeros((0,), dtype=np.float32)),
       'hidden_friction': (np.concatenate(mu_all) if mu_all
                          else np.zeros((0,), dtype=np.float32)),
+      # 우회(detour) 구간 표시 — 파지 직후 무작위 지점으로 갔다가 돌아온
+      # 스텝들. 학습에 넣을 필요는 없지만, 어느 스텝이 "이상한 위치" 데이터인지
+      # 사후 분석(예: MAE를 우회/비우회로 나눠 보기)에 쓸 수 있다.
+      'is_detour': (np.concatenate(detour_all) if detour_all
+                   else np.zeros((0,), dtype=bool)),
       'meta': {
           'source': ('collect_carry_demos.py: '
                      'ScriptedCarryPolicy(explore_range=...) rollouts'),
@@ -169,6 +219,9 @@ def collect(n_episodes: int, explore_range: Optional[Tuple[float, float]] = None
           'speed': speed,
           'torque_safety': torque_safety,
           'action_noise_std': action_noise_std,
+          'detour_prob': detour_prob,
+          'detour_steps': detour_steps,
+          'n_detour_triggered': n_detour_triggered,
           'allow_regrasp': allow_regrasp,
           'keep_failures': keep_failures,
           'failure_bin': cfg.max_steps,
@@ -221,6 +274,15 @@ def main(argv=None) -> int:
                   help=('실패 에피소드도 저장한다. 그 안의 모든 스텝은 '
                         'time_to_success=max_steps(마지막 bin, 실패 클래스)로 '
                         '라벨링된다. 기본은 꺼져 있다(성공만, 논문과 동일).'))
+  ap.add_argument('--detour-prob', type=float, default=0.0,
+                  help=('이 확률로 뽑힌 에피소드는 파지 직후 detour-steps 동안 '
+                        '작업공간 내 완전 무작위 지점으로 갔다가(계속 쥔 채로) '
+                        '제어권을 정책에 돌려준다 — 정책은 피드백 제어기라 '
+                        '어디서 시작하든 정상 종료(성공)까지 이어간다. 예측기가 '
+                        '못 본 "이상한" 상태를 성공 라벨과 함께 모으는 용도. '
+                        '0(기본)이면 비활성.'))
+  ap.add_argument('--detour-steps', type=int, default=20,
+                  help='우회가 발동되면 무작위 목표로 유지하는 스텝 수.')
   ap.add_argument('--out', default='data/grasp_carry_demos.pkl')
   args = ap.parse_args(argv)
 
@@ -229,7 +291,8 @@ def main(argv=None) -> int:
                  explore_seed=args.explore_seed,
                  allow_regrasp=not args.no_regrasp, speed=args.speed,
                  keep_failures=args.keep_failures, torque_safety=args.torque_safety,
-                 action_noise_std=args.action_noise_std)
+                 action_noise_std=args.action_noise_std,
+                 detour_prob=args.detour_prob, detour_steps=args.detour_steps)
   os.makedirs(os.path.dirname(args.out) or '.', exist_ok=True)
   with open(args.out, 'wb') as fp:
     pickle.dump(data, fp)

@@ -40,10 +40,13 @@ def load_diff_policy(ckpt_path):
     ck = pickle.load(fp)
   m = ck['meta']
   act_dim = len(ck['norm_stats']['act_mean'])
+  # 2026-08-11: --horizon>1(액션 청킹) 체크포인트 지원. 청킹 안 쓰는 체크포인트는
+  # meta에 horizon이 없으므로 기본값 1(기존 동작과 동일)로 되돌아간다.
+  horizon = int(m.get('horizon', 1))
   nets = build_diffusion_act_chunk(
-      (256, 256, 256), act_dim, ck['dc_config']['num_bins'], ck['obs_dim'],
+      (256, 256, 256), act_dim * horizon, ck['dc_config']['num_bins'], ck['obs_dim'],
       n_diffusion_steps=m['diffusion_steps'], backbone=m['backbone'],
-      horizon=1, act_dim=act_dim)
+      horizon=horizon, act_dim=act_dim)
   normalize_obs, normalize_action, unnormalize_action = make_normalizers(ck['norm_stats'])
   return ck, nets, normalize_obs, normalize_action, unnormalize_action
 

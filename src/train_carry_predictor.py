@@ -9,9 +9,12 @@
 뱉어 phase 전환에 필요한 정확한 목표 위치를 못 낸다. PushT에서 같은 문제를
 디퓨전/믹스처 헤드로 풀었던 것과 동일한 처방이라 디퓨전 헤드를 추가했다
 (`src/diffusion_act.py`, `real-stanford/diffusion_policy` 이식).
-액션 청킹(H>1)은 이 태스크가 필요로 하지 않아(청크 실행이 아니라 매 스텝
-새 절대 목표를 받는 구조) H=1로 고정했다 — 디퓨전 헤드를 쓰는 이유는
-다봉성 때문이지 시간축 앙상블 때문이 아니다.
+`--horizon H`(기본 1, 기존 동작과 동일)로 액션 청킹을 켤 수 있다. H>1이면
+`--exec-horizon`(기본 H)만큼만 실행하고 새 관측으로 재추론하는 receding
+horizon 방식으로 롤아웃한다(mani_sim/3D 태스크와 같은 패턴). 2026-08-10:
+원래는 "매 스텝 새 절대 목표를 받는 구조라 청킹이 불필요하다"고 H=1로
+고정했었는데, 청킹을 쓰더라도 매 스텝 재추론해야 하는 게 아니라 exec-horizon
+개만 실행 후 재추론하면 되므로 그 논리가 청킹 자체를 막을 근거는 아니었다.
 
 데이터: `collect_carry_demos.py` → `data/grasp_carry_demos_v2.pkl`
   관측 60차원 = `env.observe_frame()`(15필드) x `obs_history`(4) 스택,
@@ -85,6 +88,21 @@ def concat_obs(obs):
   return jnp.concatenate([jnp.asarray(obs[f]) for f in OBS_FIELDS], axis=-1)
 
 
+def build_action_chunks(action, episode_id, horizon):
+  """각 transition마다 미래 horizon스텝의 액션을 이어붙인 청크 (N, horizon*A)를
+  만든다. 에피소드 끝을 넘어가면 그 에피소드의 마지막 액션을 반복해 패딩한다
+  (real-stanford/diffusion_policy의 표준 관행)."""
+  N, A = action.shape
+  uniq_eids, ep_start, ep_count = np.unique(episode_id, return_index=True,
+                                            return_counts=True)
+  ep_end_excl = np.repeat(ep_start + ep_count, ep_count)   # transition별 소속 에피소드의 끝(배타적) 인덱스
+  chunks = np.empty((N, horizon, A), dtype=action.dtype)
+  for h in range(horizon):
+    idx = np.minimum(np.arange(N) + h, ep_end_excl - 1)
+    chunks[:, h, :] = action[idx]
+  return chunks   # (N, horizon, A) -- 정규화 후 호출부에서 평탄화한다
+
+
 class TrainState(NamedTuple):
   params: dict
   opt_state: optax.OptState
@@ -118,10 +136,19 @@ def main():
                        '시간축 conv인 unet보다 mlp가 자연스럽다.')
   ap.add_argument('--minmax-action', action='store_true',
                   help='액션을 [-1,1] min-max로 정규화(공식 DP 방식).')
+  ap.add_argument('--horizon', type=int, default=1,
+                  help=('액션 청크 길이 H. 기본 1(기존 동작, 청킹 없음). H>1이면 '
+                        '디퓨전 헤드가 미래 H스텝을 한 번에 예측하고, 롤아웃(평가)은 '
+                        '--exec-horizon만큼만 실행 후 재추론한다.'))
+  ap.add_argument('--exec-horizon', type=int, default=None,
+                  help='롤아웃 시 청크에서 실제로 실행할 스텝 수. 기본 None -> --horizon과 동일.')
   ap.add_argument('--no-early-stop', action='store_true')
   ap.add_argument('--tag', default='', help='체크포인트 경로 접미사')
   args = ap.parse_args()
   is_diff = args.act_head == 'diffusion'
+  exec_horizon = args.exec_horizon if args.exec_horizon is not None else args.horizon
+  if exec_horizon > args.horizon:
+    raise ValueError(f'--exec-horizon({exec_horizon})은 --horizon({args.horizon})보다 클 수 없다.')
 
   head_suffix = f'_diff{args.diffusion_steps}' if is_diff else ''
   ckpt_path = f'checkpoints/grasp_carry{head_suffix}{args.tag}/predictor.pkl'
@@ -151,7 +178,8 @@ def main():
   val_mask = np.isin(data['episode_id'], list(val_eps))
 
   obs_c = np.asarray(concat_obs(normalize_obs(data['observation'])))
-  act_n = np.asarray(normalize_action(data['action']))
+  act_chunks = build_action_chunks(data['action'], data['episode_id'], args.horizon)  # (N, H, A)
+  act_n = np.asarray(normalize_action(act_chunks)).reshape(N, -1)                     # (N, H*A)
   ttg = data['time_to_success']
 
   tr_obs = jnp.asarray(obs_c[~val_mask]); tr_act = jnp.asarray(act_n[~val_mask])
@@ -162,15 +190,18 @@ def main():
         f'(val {len(val_eps)} eps, 관측 {tr_obs.shape[-1]}차원)')
 
   # ---- 네트워크
-  ACT_DIM = int(act_n.shape[-1])
+  ACT_DIM = int(data['action'].shape[-1])       # 스텝당(raw) 액션 차원 -- 항상 4, horizon과 무관
+  CHUNK_FLAT_DIM = ACT_DIM * args.horizon        # 청크 평탄화 차원 (H=1이면 ACT_DIM과 동일)
   OBS_DIM = int(tr_obs.shape[-1])
   dummy = np.ones((4, OBS_DIM), dtype=np.float32)
   if is_diff:
-    nets = build_diffusion_act_chunk((256, 256, 256), ACT_DIM, NUM_BINS,
+    nets = build_diffusion_act_chunk((256, 256, 256), CHUNK_FLAT_DIM, NUM_BINS,
                                      OBS_DIM, n_diffusion_steps=args.diffusion_steps,
-                                     backbone=args.backbone, horizon=1,
+                                     backbone=args.backbone, horizon=args.horizon,
                                      act_dim=ACT_DIM)
   else:
+    if args.horizon != 1:
+      raise ValueError('--horizon>1은 diffusion 헤드에서만 지원한다(gaussian은 미지원).')
     nets = build_continuous_act_discrete_dist_v0((256, 256, 256), ACT_DIM,
                                                  NUM_BINS, dummy)
   bin_vals = np.linspace(0, MAX_DISTANCE, NUM_BINS + 1,
@@ -290,15 +321,23 @@ def main():
   eval_seed0 = 900000    # 수집 스크립트의 seed0(기본 0)과 안 겹치는 홀드아웃 구간
   for e in range(args.eval_episodes):
     obs, info = env.reset(seed=eval_seed0 + e)
-    for _ in range(cfg.max_steps):
+    step_count = 0
+    done = False
+    while step_count < cfg.max_steps and not done:
       o = {'frame': np.asarray(obs, np.float32)[None]}
       c = np.asarray(concat_obs(normalize_obs(o)))
       kk, s2 = jax.random.split(kk)
-      a_n = np.asarray(_pol(state.params, c, s2))[0]
-      a = np.asarray(unnormalize_action(a_n), np.float32)
-      obs, r, term, trunc, info = env.step(a)
-      if term or trunc:
-        break
+      chunk_n = np.asarray(_pol(state.params, c, s2))[0].reshape(args.horizon, ACT_DIM)
+      chunk = np.asarray(unnormalize_action(chunk_n), np.float32)
+      # receding horizon: 청크 중 exec_horizon개만 실제로 실행하고 새 관측으로 재추론
+      for h in range(min(exec_horizon, args.horizon)):
+        if step_count >= cfg.max_steps:
+          break
+        obs, r, term, trunc, info = env.step(chunk[h])
+        step_count += 1
+        if term or trunc:
+          done = True
+          break
     outcomes[info['outcome']] = outcomes.get(info['outcome'], 0) + 1
     if info['outcome'] == 'success':
       succ += 1
@@ -322,7 +361,8 @@ def main():
             'env': 'grasp_carry/GraspCarry2D', 'data': args.data,
             'act_head': args.act_head, 'diffusion_steps': args.diffusion_steps,
             'backbone': args.backbone, 'minmax_action': args.minmax_action,
-            'ema_power': args.ema_power,
+            'ema_power': args.ema_power, 'horizon': args.horizon,
+            'exec_horizon': exec_horizon, 'act_dim': ACT_DIM,
             'steps': args.steps, 'seed': args.seed,
             'best_step': int(best['step']), 'weight_decay': args.weight_decay,
             'val_mae': float(best['mae']), 'val_nll': float(best['nll']),

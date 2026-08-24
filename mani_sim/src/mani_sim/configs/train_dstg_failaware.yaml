@@ -1,0 +1,24 @@
+# DstgPredictor(d(o,g)) fail-aware 학습 — 성공+실패 롤아웃 hdf5(collect_square_rollouts.py
+# 산출물) 대상. train_dstg.yaml과 대부분 동일, hdf5_path 하나로 성공+실패가 섞인 파일을 준다.
+
+policy_ckpt: ???
+hdf5_path: ???
+out: outputs/dstg/predictor_failaware.pt
+
+seed: 0
+device: cuda
+num_workers: 2
+
+batch_size: 64
+lr: 1.0e-4
+weight_decay: 1.0e-6
+num_epochs: 30
+log_every: 50
+head_hidden: [256, 256]
+
+val_fraction: 0.2
+split_seed: 0
+
+hydra:
+  run:
+    dir: outputs/dstg_failaware/hydra/${now:%Y%m%d-%H%M%S}

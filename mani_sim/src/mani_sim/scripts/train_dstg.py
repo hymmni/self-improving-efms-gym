@@ -74,7 +74,7 @@ def _episode_split(dataset, val_fraction, seed):
     return train_idx, val_idx, len(unique_demos) - len(val_demos), len(val_demos)
 
 
-def _run_epoch(predictor, loader, device, num_bins, optimizer=None):
+def _run_epoch(predictor, loader, device, num_bins, optimizer=None, epoch_label=""):
     train = optimizer is not None
     predictor.train(train)  # frozen_policy도 같이 토글됨 — VisionEncoder crop_hw가
     # self.training으로 RandomCrop/CenterCrop을 고르므로 train=RandomCrop, eval=CenterCrop
@@ -83,7 +83,10 @@ def _run_epoch(predictor, loader, device, num_bins, optimizer=None):
 
     total_nll, total_abs_err, n = 0.0, 0.0, 0
     bin_idx = torch.arange(num_bins, device=device, dtype=torch.float32)
-    for raw_batch in loader:
+    n_batches = len(loader)
+    for b_i, raw_batch in enumerate(loader):
+        if n_batches > 20 and (b_i % max(1, n_batches // 10) == 0 or b_i == n_batches - 1):
+            print(f"  {epoch_label} 배치 {b_i + 1}/{n_batches}", flush=True)
         obs = {k: v.to(device) for k, v in raw_batch["obs"].items()}
         labels = raw_batch["time_to_success"].to(device).long()
 
@@ -134,7 +137,17 @@ def main(cfg: DictConfig):
         normalizer=normalizer, rgb_keys=task_cfg.rgb_keys, hdf5_cache_mode=cache_mode,
     )
     labels = dataset.get_time_to_success()
-    num_bins = int(labels.max()) + 1  # 데이터에서 관측된 최대 time-to-success로 결정(고정 상수 금지)
+    # 기본은 데이터에서 관측된 최대 time-to-success로 정한다(고정 상수 금지, 원래 방침).
+    # cfg.num_bins_override(기본 None)가 있으면 그 값을 강제로 쓴다 — 2026-08-11: 데이터
+    # 스케일링 비교 실험처럼 "여러 체크포인트가 같은 bin 공간을 써야 mu/sigma를 그대로
+    # 비교할 수 있는" 상황 전용. 그 외엔 기본값(None)을 유지해 기존 동작 그대로 둔다.
+    if cfg.get("num_bins_override"):
+      num_bins = int(cfg.num_bins_override)
+      if num_bins <= int(labels.max()):
+        raise ValueError(f"num_bins_override({num_bins})가 실제 관측된 최대 time-to-success"
+                         f"({int(labels.max())})보다 작거나 같다 — 라벨이 잘린다.")
+    else:
+      num_bins = int(labels.max()) + 1
     logger.info(f"dataset len={len(dataset)} num_bins={num_bins} (max observed time-to-success={int(labels.max())})")
 
     train_idx, val_idx, n_train_demos, n_val_demos = _episode_split(dataset, cfg.val_fraction, cfg.split_seed)
@@ -158,11 +171,14 @@ def main(cfg: DictConfig):
     optimizer = torch.optim.AdamW(predictor.head.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
 
     for epoch in range(cfg.num_epochs):
-        train_nll, train_mae = _run_epoch(predictor, train_loader, device, num_bins, optimizer=optimizer)
+        train_nll, train_mae = _run_epoch(predictor, train_loader, device, num_bins, optimizer=optimizer,
+                                          epoch_label=f"epoch {epoch}/{cfg.num_epochs}")
         if epoch % cfg.log_every == 0 or epoch == cfg.num_epochs - 1:
-            logger.info(f"epoch {epoch} train_nll={train_nll:.4f} train_mae={train_mae:.3f}")
+            msg = f"epoch {epoch} train_nll={train_nll:.4f} train_mae={train_mae:.3f}"
+            logger.info(msg)
+            print(msg, flush=True)
 
-    val_nll, val_mae = _run_epoch(predictor, val_loader, device, num_bins, optimizer=None)
+    val_nll, val_mae = _run_epoch(predictor, val_loader, device, num_bins, optimizer=None, epoch_label="[val]")
     logger.info(f"[val] nll={val_nll:.4f} mae={val_mae:.3f} (n={len(val_idx)} samples, {n_val_demos} demos)")
     print({"val_nll": val_nll, "val_mae": val_mae, "num_bins": num_bins,
            "n_train_demos": n_train_demos, "n_val_demos": n_val_demos})

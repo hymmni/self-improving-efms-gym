@@ -50,23 +50,17 @@ def _ee_block_dist(env) -> float:
 
 
 def view_limits(env):
-  """작업 영역만 잡는 (xlim, ylim). 그리퍼 다각형이 항상 안에 들어오게 한다.
+  """작업 영역만 잡는 (xlim, ylim). 매 프레임 고정값이다(그리퍼 위치와 무관).
 
   `+y`가 아래인 세계 좌표라 `ylim`은 (바닥 쪽 큰 값, 위쪽 작은 값) 순으로
-  준다. 상단은 `_DEFAULT_TOP_Y`가 기본이지만, 이번 프레임의 그리퍼 다각형이
-  그보다 위로 나가 있으면(빠른 속도의 PD 오버슈트 등) 그만큼 동적으로
-  확장한다 — 고정값만으로는 임의의 `--speeds`에서 그리퍼가 화면 밖으로
-  잘릴 수 있기 때문이다.
+  준다. 2026-08-10: 예전엔 그리퍼 다각형이 `_DEFAULT_TOP_Y`/월드 폭을 넘어가면
+  (빠른 속도의 PD 오버슈트 등) 그만큼 동적으로 확장해서 프레임 크기가
+  매 프레임 달라졌었다 — 영상 가로세로가 흔들리는 게 더 보기 안 좋다는
+  피드백으로, 이제 고정 범위만 쓰고 그 밖으로 나가는 그리퍼는 그냥 화면
+  밖으로 잘리게 둔다.
   """
   cfg = env.cfg
-  polys = env.gripper.polygons()
-  xs = np.concatenate([p[:, 0] for p in polys])
-  ys = np.concatenate([p[:, 1] for p in polys])
-  x_lo = min(0.0, float(xs.min()) - _VIEW_MARGIN)
-  x_hi = max(cfg.world_width, float(xs.max()) + _VIEW_MARGIN)
-  top = min(_DEFAULT_TOP_Y, float(ys.min()) - _VIEW_MARGIN)
-  bottom = cfg.floor_y + _FLOOR_MARGIN
-  return (x_lo, x_hi), (bottom, top)
+  return (0.0, cfg.world_width), (cfg.floor_y + _FLOOR_MARGIN, _DEFAULT_TOP_Y)
 
 
 def draw_env(ax, env, action=None, side_label='', block_color='tab:blue',

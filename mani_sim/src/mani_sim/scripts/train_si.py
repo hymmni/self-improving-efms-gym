@@ -35,6 +35,7 @@ Black et al. 2023). 데이터 재사용이 없는 DDPO-SF(score function, 바닐
 """
 
 import copy
+import json
 import logging
 import os
 import shutil
@@ -223,6 +224,26 @@ def _assert_encoders_frozen(before, after):
             )
 
 
+def _save_checkpoint(policy, cfg, out_path, epoch, task_cfg, policy_cfg, policy_name, stats_path):
+    """cfg.out(최종)과 best-so-far 경로 둘 다 이 함수로 저장한다(payload 형식 통일)."""
+    out_dir = os.path.dirname(out_path) or "."
+    os.makedirs(out_dir, exist_ok=True)
+    payload = {
+        "model": policy.state_dict(),
+        "epoch": epoch,
+        "si_dstg_ckpt": cfg.dstg_ckpt,
+        "si_statistic": cfg.statistic,
+        "si_gamma": cfg.gamma,
+        "si_reinforce_scale": cfg.reinforce_scale,
+        "si_iterations": cfg.iterations,
+        "si_episodes_per_iter": cfg.episodes_per_iter,
+        "si_base_ckpt": cfg.policy_ckpt,
+    }
+    torch.save(payload, out_path)
+    save_run_config(out_dir, task_cfg, policy_cfg, policy_name)
+    shutil.copy(stats_path, os.path.join(out_dir, "normalization_stats.json"))
+
+
 # ------------------------------------------------------------------------ main
 
 @hydra.main(config_path="../configs", config_name="train_si", version_base=None)
@@ -303,6 +324,16 @@ def main(cfg: DictConfig):
     n_pairs_per_decision = n_steps - 1
     os.makedirs(os.path.dirname(cfg.out) or ".", exist_ok=True)
 
+    best_succ_rate, best_R_mean, best_it = -1.0, -np.inf, None
+    out_root, out_ext = os.path.splitext(cfg.out)
+    best_out = f"{out_root}_best{out_ext}"
+    # iteration마다 통계량(집계 + 에피소드별 raw 배열)을 한 줄씩 append하는 JSON Lines
+    # 파일 — 실제 모델 체크포인트는 best/final 둘만 저장되지만(용량 문제), 이 파일은
+    # 매 iteration 다 남기므로 나중에 "그 iteration에서 뭐가 있었는지"를 소급 조회할 수
+    # 있다(2026-08-11: 2D에서 이 로그가 없어 지난 iteration들의 성공길이 분포 등을 못
+    # 구했던 문제의 재발 방지).
+    stats_jsonl_path = os.path.join(os.path.dirname(cfg.out) or ".", "train_stats.jsonl")
+
     for it in range(1, cfg.iterations + 1):
         t_iter_start = time.time()
 
@@ -310,7 +341,7 @@ def main(cfg: DictConfig):
         ep_lens, ep_decision_counts, ep_env_succ = [], [], []
 
         with torch.no_grad():
-            for _ in range(cfg.episodes_per_iter):
+            for ep_i in range(cfg.episodes_per_iter):
                 np.random.seed(env_seed_counter)  # robosuite 초기 배치 시퀀스 고정(eval.py와 동일 방식)
                 env_seed_counter += 1
                 decisions, env_success, n_env_steps = collect_episode_si(
@@ -325,6 +356,10 @@ def main(cfg: DictConfig):
                 ep_lens.append(n_env_steps)
                 ep_decision_counts.append(len(decisions))
                 ep_env_succ.append(env_success)
+                print(f"  it={it} ep {ep_i + 1}/{cfg.episodes_per_iter}: steps={n_env_steps} "
+                      f"decisions={len(decisions)} success={env_success}  "
+                      f"누적 성공 {sum(ep_env_succ)}/{ep_i + 1} ({sum(ep_env_succ) / (ep_i + 1):.1%})",
+                      flush=True)
 
         global_cond_all = torch.stack(all_global_cond)  # (N, cond_dim), CPU
         xs_all = torch.stack(all_xs)                      # (N, n_steps+1, Tp, Da), CPU
@@ -345,9 +380,12 @@ def main(cfg: DictConfig):
 
         losses = []
         n_total_pairs = len(j_idx)
-        for start in range(0, n_total_pairs, cfg.logp_batch):
+        n_batches = (n_total_pairs + cfg.logp_batch - 1) // cfg.logp_batch
+        for b_i, start in enumerate(range(0, n_total_pairs, cfg.logp_batch)):
             sl = slice(start, start + cfg.logp_batch)
             bj, bp = j_idx[sl], p_idx[sl]
+            if n_batches > 4 and (b_i % max(1, n_batches // 10) == 0 or b_i == n_batches - 1):
+                print(f"  it={it} REINFORCE 배치 {b_i + 1}/{n_batches}", flush=True)
 
             global_cond_b = global_cond_all[bj].to(device)
             x_in_b = xs_all[bj, bp].to(device)
@@ -385,31 +423,49 @@ def main(cfg: DictConfig):
         print(msg, flush=True)
         logger.info(msg)
 
+        succ_lens = [n for n, s in zip(ep_lens, ep_env_succ) if s]
+        stats_row = {
+            "it": it,
+            "R_mean": float(R_all.mean()), "R_abs_mean": float(np.abs(R_all).mean()),
+            "env_succ_rate": n_env_succ / cfg.episodes_per_iter,
+            "decisions_per_ep_mean": float(np.mean(ep_decision_counts)),
+            "ep_len_mean": float(np.mean(ep_lens)),
+            "ep_len_succ_mean": float(np.mean(succ_lens)) if succ_lens else None,
+            "ep_len_succ_median": float(np.median(succ_lens)) if succ_lens else None,
+            "drift_L2": float(drift), "loss": float(np.mean(losses)), "iter_time_s": iter_time,
+            "ep_lens": ep_lens, "ep_env_succ": ep_env_succ,
+        }
+        with open(stats_jsonl_path, "a") as f:
+            f.write(json.dumps(stats_row) + "\n")
+
         if not np.isfinite(R_all).all() or not np.isfinite(drift):
             raise RuntimeError(
                 f"it={it}: 리턴 또는 드리프트가 비유한(NaN/inf)이 됐다 — 중단. "
                 f"R_all finite={np.isfinite(R_all).all()}  drift={drift}"
             )
 
+        # ---- best-so-far 체크포인트 -----------------------------------------
+        # 이 루프는 --episodes-per-iter가 작아(예: 8) iteration별 env_succ_rate
+        # 분산이 크다 — 정점을 찍고 다시 나빠지는 경우(2026-08-09 실측: it=7에서
+        # 75%까지 올랐다가 이후 drift가 계속 커지며 하락) 마지막 iteration만
+        # 저장하면 그 정점을 영영 잃는다. 그래서 env_succ_rate가 갱신될 때마다
+        # (동률이면 R_mean으로 타이브레이크) 즉시 별도 파일로 저장해둔다.
+        succ_rate = n_env_succ / cfg.episodes_per_iter
+        is_new_best = (succ_rate > best_succ_rate or
+                      (succ_rate == best_succ_rate and R_all.mean() > best_R_mean))
+        if is_new_best:
+            best_succ_rate, best_R_mean, best_it = succ_rate, float(R_all.mean()), it
+            _save_checkpoint(policy, cfg, best_out, it, task_cfg, policy_cfg, policy_name, stats_path)
+            logger.info(f"  [best 갱신] it={it} env_succ_rate={succ_rate:.1%} -> {best_out}")
+            print(f"  [best 갱신] it={it} env_succ_rate={succ_rate:.1%} -> {best_out}", flush=True)
+
     env.env.close()
 
-    out_dir = os.path.dirname(cfg.out) or "."
-    payload = {
-        "model": policy.state_dict(),
-        "epoch": cfg.iterations,
-        "si_dstg_ckpt": cfg.dstg_ckpt,
-        "si_statistic": cfg.statistic,
-        "si_gamma": cfg.gamma,
-        "si_reinforce_scale": cfg.reinforce_scale,
-        "si_iterations": cfg.iterations,
-        "si_episodes_per_iter": cfg.episodes_per_iter,
-        "si_base_ckpt": cfg.policy_ckpt,
-    }
-    torch.save(payload, cfg.out)
-    save_run_config(out_dir, task_cfg, policy_cfg, policy_name)
-    shutil.copy(stats_path, os.path.join(out_dir, "normalization_stats.json"))
+    _save_checkpoint(policy, cfg, cfg.out, cfg.iterations, task_cfg, policy_cfg, policy_name, stats_path)
     logger.info(f"저장: {cfg.out} (+ run_config.yaml, normalization_stats.json)")
-    print(f"저장: {cfg.out}", flush=True)
+    print(f"저장(final): {cfg.out}", flush=True)
+    logger.info(f"best-so-far: it={best_it} env_succ_rate={best_succ_rate:.1%} -> {best_out}")
+    print(f"best-so-far: it={best_it} env_succ_rate={best_succ_rate:.1%} -> {best_out}", flush=True)
 
 
 if __name__ == "__main__":

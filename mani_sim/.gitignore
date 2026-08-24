@@ -2,6 +2,7 @@
 data/
 outputs/
 wandb/
+results/
 
 # python
 __pycache__/

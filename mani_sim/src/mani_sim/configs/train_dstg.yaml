@@ -4,6 +4,7 @@
 policy_ckpt: ???
 hdf5_path: ???
 out: outputs/dstg/predictor.pt
+num_bins_override: null  # 설정하면 데이터에서 자동으로 정하는 대신 이 값을 강제로 쓴다
 
 seed: 0
 device: cuda

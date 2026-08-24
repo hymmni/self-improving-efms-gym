@@ -37,6 +37,13 @@ def collect(diff_ckpt: str, n_episodes: int, seed0: int) -> dict:
   ck, nets, normalize_obs, normalize_action, unnormalize_action = load_diff_policy(diff_ckpt)
   _sample = jax.jit(lambda p, c, k: nets.sample_chunk(p, c, k))
 
+  # 2026-08-11: --horizon>1(액션 청킹) 체크포인트 지원. 청킹 안 쓰는 체크포인트는
+  # meta에 horizon이 없으므로 기본값 1(기존 동작과 동일)로 되돌아간다.
+  m = ck['meta']
+  horizon = int(m.get('horizon', 1))
+  exec_horizon = int(m.get('exec_horizon', horizon))
+  act_dim = int(m.get('act_dim', len(ck['norm_stats']['act_mean'])))
+
   cfg = CarryConfig()
   env = GraspCarry2D(cfg)
 
@@ -48,18 +55,24 @@ def collect(diff_ckpt: str, n_episodes: int, seed0: int) -> dict:
   for e in range(n_episodes):
     obs, info = env.reset(seed=seed0 + e)
     obs_l, act_l = [obs], []
+    terminated = truncated = False
 
-    for _ in range(cfg.max_steps):
+    while len(act_l) < cfg.max_steps and not (terminated or truncated):
       o = {'frame': np.asarray(obs, np.float32)[None]}
       c = np.asarray(concat_obs(normalize_obs(o)))
       kk, s2 = jax.random.split(kk)
-      a_n = np.asarray(_sample(ck['params'], jnp.asarray(c), s2))[0]
-      a = np.asarray(unnormalize_action(a_n), np.float32)
-      act_l.append(a)
-      obs, _, terminated, truncated, info = env.step(a)
-      if terminated or truncated:
-        break
-      obs_l.append(obs)
+      chunk_n = np.asarray(_sample(ck['params'], jnp.asarray(c), s2))[0].reshape(horizon, act_dim)
+      chunk = np.asarray(unnormalize_action(chunk_n), np.float32)
+      # receding horizon: 청크 중 exec_horizon개만 실행하고 새 관측으로 재추론
+      for h in range(min(exec_horizon, horizon)):
+        if len(act_l) >= cfg.max_steps:
+          break
+        a = chunk[h]
+        act_l.append(a)
+        obs, _, terminated, truncated, info = env.step(a)
+        if terminated or truncated:
+          break
+        obs_l.append(obs)
 
     outcomes[info['outcome']] = outcomes.get(info['outcome'], 0) + 1
     is_success = info['outcome'] == 'success'

@@ -149,6 +149,31 @@ def main():
                         '~0.27%%뿐) 샘플이 최소 이 비율만큼은 들어가도록 층화한다 — '
                         '균등샘플링만으로는 배치당 평균 1개도 안 뽑혀 나머지 신호에 '
                         '묻힌다(실측). 0이면 층화 없음(기존 균등샘플링).'))
+  ap.add_argument('--judgment-window', type=int, default=1,
+                  help=('--fail-mode deadline 전용. tipped 에피소드에서 "판정 순간"으로 '
+                        '간주해 B 라벨을 줄 마지막 transition 개수. 기본 1(마지막 '
+                        '스텝만, 기존 동작). 2026-08-10 실측: 이 값이 1이면 실패 '
+                        'transition의 99.6%%가 부트스트랩 라벨(succ 전용 예측기의 '
+                        '낙관적 추측)로 채워져, 부트스트랩의 편향(실패로 가는 상태를 '
+                        '"정상 진행"으로 낙관 예측)이 학습 신호를 희석한다 — 실패 '
+                        '에피소드의 77%%에서 시간에 따라 mu가 (허위로) 감소하는 추세로 '
+                        '나타남. 이 창을 넓히면 진짜 B 라벨 비중이 늘어 부트스트랩 '
+                        '의존도가 줄어든다(timeout은 대상 아님 — 마지막 순간이 물리적으로 '
+                        '확정된 나쁜 사건이 아니라는 기존 근거는 안 바뀜).'))
+  ap.add_argument('--exclude-bootstrap', action='store_true',
+                  help=('--fail-mode deadline 전용. 부트스트랩 라벨(판정 이전 실패 '
+                        'transition에 succ 전용 모델 추측값을 쓰는 것) 자체를 학습에서 '
+                        '뺀다 — 보정하는 대신 아예 안 씀. 2026-08-10: 부트스트랩이 '
+                        '"실패로 가는데도 정상 진행처럼" 낙관 예측하는 구조적 편향의 '
+                        '원인으로 확인됐다(judgment-window를 넓혀도 절반 가까이 남음). '
+                        '이 옵션을 켜면 성공도 --data 전체가 아니라 데모 구간만 '
+                        '남긴다(에피소드ID < --demo-episode-cutoff) — 롤아웃 성공은 '
+                        '데모보다 노이즈가 크다는 관측 때문에 같이 뺀다. 최종 학습셋 = '
+                        '데모 성공 + 판정순간(B 라벨)만.'))
+  ap.add_argument('--demo-episode-cutoff', type=int, default=None,
+                  help=('--exclude-bootstrap 전용. 이 값 미만 episode_id를 "데모"로 '
+                        "본다. 기본 None -> data['meta']['n_demo_episodes']를 읽는다 "
+                        '(merge_demo_rollout.py류 병합 데이터에 이미 있음).'))
   ap.add_argument('--bootstrap-ckpt', default='checkpoints/grasp_carry_dstg_succ/predictor.pkl',
                   help=('--fail-mode deadline 전용. 실패가 "판정되기 전" transition의 '
                         '라벨 출처. 그 시점엔 아직 실패가 확정 안 됐고(같은 상황에서 '
@@ -165,6 +190,15 @@ def main():
   ap.add_argument('--patience', type=int, default=12)
   ap.add_argument('--weight-decay', type=float, default=1e-4)
   ap.add_argument('--no-early-stop', action='store_true')
+  ap.add_argument('--init-ckpt', default=None,
+                  help=('처음부터(random init) 대신, 이 체크포인트의 가중치로 시작해서'
+                        '파인튜닝한다. 구조(layer_sizes/obs_dim/num_bins)가 정확히'
+                        '같아야 함 — succ 전용과 deadline 모드는 둘 다 NUM_BINS=max_steps'
+                        '(class 모드만 +1)라 서로 호환됨. 2026-08-10: 롤아웃 데이터로'
+                        'from-scratch 학습시키면 깨끗한 스크립트 시연에 대한 정확도가'
+                        '떨어지는 게 확인돼(성공만 학습해도 MAE 9.55 vs 스크립트 전용'
+                        '4.55) — 스크립트 시연으로 학습한 succ 체크포인트에서 시작해'
+                        '작은 lr로 롤아웃 데이터에 약하게 적응시키는 절충안.'))
   ap.add_argument('--out', required=True, help='체크포인트 저장 경로')
   args = ap.parse_args()
 
@@ -260,16 +294,20 @@ def main():
     # 없다.
     eid_all = data['episode_id']
     uniq_eids, ep_start, ep_count = np.unique(eid_all, return_index=True, return_counts=True)
-    last_idx_of_episode = ep_start + ep_count - 1
-    is_last_of_episode = np.zeros(N, dtype=bool)
-    is_last_of_episode[last_idx_of_episode] = True
 
     # 에피소드 길이==max_steps는 정의상 timeout뿐이다(tipped는 그보다 먼저 끝난다).
     # 이 방식으로 27/48(timeout/tipped) meta 집계와 정확히 일치함을 실측 확인했다.
     is_timeout_episode = ep_count == max_steps
     is_timeout_transition = np.repeat(is_timeout_episode, ep_count)
 
-    fail_judgment_mask = is_last_of_episode & (~is_succ) & (~is_timeout_transition)
+    # steps_from_end: 각 transition이 자기 에피소드의 마지막 transition으로부터
+    # 몇 스텝 전인지(0=마지막 스텝). --judgment-window(기본 1)만큼을 판정 구간으로
+    # 본다 — 1이면 기존 동작(마지막 스텝만)과 동일.
+    pos_in_ep = np.arange(N) - np.repeat(ep_start, ep_count)
+    steps_from_end = np.repeat(ep_count - 1, ep_count) - pos_in_ep
+
+    fail_judgment_mask = ((~is_succ) & (~is_timeout_transition)
+                          & (steps_from_end < args.judgment_window))
     fail_pre_mask = (~is_succ) & (~fail_judgment_mask)     # timeout 전체 + tipped 판정 이전
     print(f'[deadline 모드] 실패 transition {int((~is_succ).sum())}개 중 '
           f'판정순간={int(fail_judgment_mask.sum())}개(tipped만, B 라벨), '
@@ -311,6 +349,22 @@ def main():
     keep_mask = np.ones(N, dtype=bool)
   else:
     keep_mask = is_succ
+
+  if args.exclude_bootstrap:
+    if not deadline_mode:
+      raise ValueError('--exclude-bootstrap은 --fail-mode deadline에서만 의미 있다.')
+    cutoff = args.demo_episode_cutoff
+    if cutoff is None:
+      cutoff = data['meta'].get('n_demo_episodes')
+      if cutoff is None:
+        raise ValueError("--demo-episode-cutoff를 지정하거나, --data가 meta['n_demo_episodes']"
+                         '를 가진 병합 데이터여야 한다.')
+    is_demo = data['episode_id'] < cutoff
+    keep_mask = (is_succ & is_demo) | fail_judgment_mask
+    print(f'[exclude-bootstrap] cutoff={cutoff}(데모 에피소드 수)  '
+          f'유지: 데모성공 {int((is_succ & is_demo).sum())}개 + 판정순간 '
+          f'{int(fail_judgment_mask.sum())}개 = {int(keep_mask.sum())}개 '
+          f'(전체 {N}개 중 {keep_mask.mean():.1%})')
 
   tr_mask = (~val_mask) & keep_mask
   # 검증셋도 같은 keep_mask로 거른다. succ 버전(num_bins=200)은 라벨 200을
@@ -360,7 +414,18 @@ def main():
                           weight_decay=args.weight_decay)
   key = jax.random.PRNGKey(args.seed)
   key, sub = jax.random.split(key)
-  params = init_fn(sub)
+  if args.init_ckpt:
+    with open(args.init_ckpt, 'rb') as fp:
+      init_ck = pickle.load(fp)
+    if (init_ck.get('obs_dim') != OBS_DIM or init_ck.get('num_bins') != NUM_BINS
+        or tuple(init_ck.get('layer_sizes', ())) != DEFAULT_LAYER_SIZES):
+      raise ValueError(
+          f'--init-ckpt 구조 불일치: init={init_ck.get("obs_dim")}/{init_ck.get("num_bins")}/'
+          f'{init_ck.get("layer_sizes")} vs 현재={OBS_DIM}/{NUM_BINS}/{DEFAULT_LAYER_SIZES}')
+    params = jax.tree.map(jnp.asarray, init_ck['params'])
+    print(f'[init] {args.init_ckpt}에서 가중치를 불러와 파인튜닝 시작(처음부터 아님).')
+  else:
+    params = init_fn(sub)
   state = TrainState(params, optimizer.init(params))
 
   def loss_fn(p, bo, bt):
