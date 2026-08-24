@@ -96,6 +96,7 @@ def collect_one_episode(env: GraspCarry2D, cfg: CarryConfig, rng: np.random.Gene
   waypoint = None
   waypoint_ttl = 0
   was_held = False
+  not_held_run = 0   # env._track_drop()과 동일 기준(2스텝 연속) — 접촉 깜빡임 오탐 방지
   half = cfg.gripper_outer_width / 2.0
 
   terminated = truncated = False
@@ -121,9 +122,11 @@ def collect_one_episode(env: GraspCarry2D, cfg: CarryConfig, rng: np.random.Gene
           detours_done += 1
           a = policy._goto(env, waypoint[0], waypoint[1], policy._safe_speed(env), 1.0)
           waypoint_ttl -= 1
-      else:
+          policy._step_i += 1  # __call__을 안 거치므로 정책의 내부 스텝 카운터를
+      else:                     # 직접 맞춰줘야 한다 — 안 그러면 마무리 단계(auto_finish)
         a = policy._goto(env, waypoint[0], waypoint[1], policy._safe_speed(env), 1.0)
-        waypoint_ttl -= 1
+        waypoint_ttl -= 1        # 에서 _safe_speed의 "남은 예산" 계산이 실제보다 넉넉하다고
+        policy._step_i += 1      # 착각해 너무 느리게 움직이다 타임아웃난다(실측: 30/30 실패).
     elif mode == 'auto_finish':
       a = policy(env)
     else:  # 'human'
@@ -139,7 +142,13 @@ def collect_one_episode(env: GraspCarry2D, cfg: CarryConfig, rng: np.random.Gene
     info_last = info
 
     held_now = env.is_held()
-    if mode in ('auto_detour', 'auto_finish') and was_held and not held_now:
+    if held_now:
+      not_held_run = 0
+    elif was_held or not_held_run > 0:
+      # was_held(방금까지 잡고 있었음) 또는 이미 연속 카운트 중이면 이어서 센다
+      # — env.py _track_drop()과 동일하게 접촉 깜빡임(1스텝) 오탐을 거른다.
+      not_held_run += 1
+    if mode in ('auto_detour', 'auto_finish') and not_held_run >= 2:
       mode = 'human'
       print('  !! 놓침 -- 마우스로 이어받으세요 (누르고 있으면 쥠) !!')
     was_held = held_now
