@@ -87,17 +87,12 @@ def draw_env(ax, env, action=None, side_label='', block_color='tab:blue',
 
   # 박스(소스=회색/좁음, 타겟=초록/넓음) — 소스 내폭은 에피소드마다 다르므로
   # 매번 env.src_box에서 읽는다.
-  for box, color, label in ((env.src_box, '0.45', '소스(좁음)'),
-                            (env.tgt_box, 'seagreen', '타겟(넓음)')):
+  for box, color in ((env.src_box, '0.45'), (env.tgt_box, 'seagreen')):
     ax.plot([box.left_outer, box.right_outer],
             [box.inner_floor_y, box.inner_floor_y], color=color, lw=4, zorder=1)
     for x in (box.left_inner, box.right_inner):
       ax.plot([x, x], [box.rim_y, box.inner_floor_y], color=color, lw=4,
               zorder=1)
-    ax.text(box.center_x, box.rim_y - 6,
-            f'{label}\n내폭 {box.inner_width:.0f}mm', ha='center', va='bottom',
-            fontsize=7, color=color, zorder=5,
-            bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))
 
   # 그리퍼 — env가 노출하는 다각형을 그대로 그린다. 잡는 중(물림)/닫는 중/
   # 열림을 색으로 구분한다.
@@ -112,31 +107,13 @@ def draw_env(ax, env, action=None, side_label='', block_color='tab:blue',
   ax.add_patch(Polygon(verts, closed=True, facecolor=block_color,
                        edgecolor='k', lw=1.2, alpha=0.9, zorder=3))
 
-  # 접촉 길이(패드-블록 옆면 겹침) — 패드 옆에 막대 + 숫자
+  # 접촉 길이(패드-블록 옆면 겹침) — 패드 옆에 막대만(숫자 라벨은 안 그림)
   contact = env.contact_length()
   if contact > 0.0:
     top_y, bottom_y = env.gripper.pad_span_y()
     xr = env.gripper.pose[0] + cfg.gripper_outer_width / 2.0 + 10.0
     ax.plot([xr, xr], [top_y, top_y + contact], color='lime', lw=4,
             solid_capstyle='butt', zorder=4)
-    ax.text(xr + 4.0, top_y + contact / 2.0, f'접촉 {contact:.0f}mm',
-            fontsize=7, color='green', va='center')
-
-  # 미끄러짐 — 파지 시점 EE-블록 거리 대비 **증가분**만 표시한다(절대 거리는
-  # 파지 오프셋을 포함해 항상 크게 나와 의미가 없다).
-  if held and base_offset is not None:
-    slip = _ee_block_dist(env) - base_offset
-    ax.text(0.02, 0.97, f'미끄러짐 {slip:+.1f}mm', transform=ax.transAxes,
-            fontsize=8, va='top',
-            color=('red' if slip > 8.0 else 'darkorange'),
-            fontweight=('bold' if slip > 8.0 else 'normal'))
-
-  # 그리퍼 처짐 — 명령 목표 y와 실제 베이스 y의 차이(무거운 물체를 들 때
-  # 하중이 드러나는 유일한 관측 단서).
-  if action is not None:
-    sag = float(env.gripper.pose[1]) - float(action[1])
-    ax.text(0.02, 0.90, f'처짐 {sag:+.1f}mm', transform=ax.transAxes,
-            fontsize=8, va='top', color='steelblue')
 
   if info['outcome'] == 'success':
     state = '성공'

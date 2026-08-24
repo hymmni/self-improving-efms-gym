@@ -116,22 +116,32 @@ def collect(n_episodes: int, explore_range: Optional[Tuple[float, float]] = None
       in_detour = False
       if detour_armed and policy.phase == 'carry' and detour_remaining == 0:
         # 파지를 막 끝내고 운반을 시작하는 순간 — 여기서 우회를 발동한다.
-        # y는 floor_y-20까지 무작위로 뽑으면 안 된다 — env.step의 하드스톱이
-        # max_descend_y(tx)(박스 벽/rim에 막히는 실제 물리 한계)로 매 substep
-        # 목표를 잘라버리므로, 그 한계보다 깊은 목표를 주면 그리퍼가 벽에
-        # 눌린 채 그 자리에 멈춰 서서 "우회"가 실제로는 제자리 정지가 된다
-        # (2026-08-24 실측으로 발견 — tx가 소스박스 중심 근처일 때 특히 심함).
-        # tx를 먼저 뽑고 그 x에서 실제로 도달 가능한 범위 안에서만 ty를 뽑는다.
+        # ty를 자유롭게 뽑으면 안 된다 — 두 가지 실측된 문제가 있었다(2026-08-24):
+        # (1) y를 floor_y-20까지 무작위로 뽑으면 env.step의 하드스톱(max_descend_y,
+        #     박스 벽/rim에 막히는 실제 물리 한계)이 매 substep 목표를 잘라버려서,
+        #     그리퍼가 벽에 눌린 채 그 자리에 멈춰 서는("우회"가 사실상 제자리 정지)
+        #     경우가 있었다. (2) 반대로 천장 근처(y=20)가 뽑히면 블록을 든 채
+        #     하늘 끝까지 올라가버려("논문의 웨이포인트 경유"가 아니라 그냥 이상한
+        #     동작으로 보임 — 사용자 지적) 실제 낙하 위험도 커졌다.
+        # 해결: x만 무작위로 바꾸고(=경유지), y는 정책이 평소 운반할 때 쓰는
+        # 높이(_travel_y_hold, 두 박스 rim을 넘는 정상 운반고도)를 그대로 쓴다 —
+        # "경유지를 들렀다가 목적지에 내려놓는" 정상적인 우회 경로가 된다.
         tx = float(rng.uniform(half, cfg.world_width - half))
-        max_ty = env.max_descend_y(tx)
-        ty = float(rng.uniform(20.0, max(20.0 + 1.0, max_ty - 5.0)))
+        ty = float(policy._travel_y_hold(env))
         detour_target = (tx, ty)
         detour_remaining = detour_steps
         detour_armed = False
         n_detour_triggered += 1
       if detour_remaining > 0:
         tx, ty = detour_target
-        a = np.array([tx, ty, 0.0, 1.0], dtype=np.float32)  # 계속 쥔 채로
+        # 목표를 그대로(고정) 20스텝 내내 명령하면 안 된다 — 목표가 멀 때
+        # PD 힘이 즉시 최댓값까지 커져 블록을 쥔 채로도 순간적으로 확 끌려가고,
+        # 그 가속이 파지력을 넘어서면 그 자리에서 바로 놓쳐버린다(2026-08-24
+        # 실측: 우회 첫 스텝부터 is_held=False, 블록은 원래 자리에 그대로
+        # 남아있었다 — 그리퍼만 허공으로 날아간 것). `_goto`와 같은 방식으로
+        # 매 스텝 현재 위치에서 안전 속도만큼만 앞선 목표를 줘서, 정책이 평소
+        # 운반할 때와 똑같이 완만하게 다가가게 한다.
+        a = policy._goto(env, tx, ty, policy._safe_speed(env), 1.0)
         detour_remaining -= 1
         in_detour = True
       if action_noise_std > 0.0:
