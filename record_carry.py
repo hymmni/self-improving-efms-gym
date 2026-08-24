@@ -107,14 +107,6 @@ def draw_env(ax, env, action=None, side_label='', block_color='tab:blue',
   ax.add_patch(Polygon(verts, closed=True, facecolor=block_color,
                        edgecolor='k', lw=1.2, alpha=0.9, zorder=3))
 
-  # 접촉 길이(패드-블록 옆면 겹침) — 패드 옆에 막대만(숫자 라벨은 안 그림)
-  contact = env.contact_length()
-  if contact > 0.0:
-    top_y, bottom_y = env.gripper.pad_span_y()
-    xr = env.gripper.pose[0] + cfg.gripper_outer_width / 2.0 + 10.0
-    ax.plot([xr, xr], [top_y, top_y + contact], color='lime', lw=4,
-            solid_capstyle='butt', zorder=4)
-
   if info['outcome'] == 'success':
     state = '성공'
   elif info['outcome'] == 'tipped':

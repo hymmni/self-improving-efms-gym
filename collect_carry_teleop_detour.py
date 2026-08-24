@@ -36,22 +36,40 @@ time_to_success/episode_id/is_success/meta) — `is_detour` 대신 사람이 조
 import argparse
 import os
 import pickle
+import sys
 
 import numpy as np
 import matplotlib
 # 인터랙티브 GUI 백엔드를 명시적으로 골라야 한다 — matplotlib.pyplot을 그냥
-# import만 하면 환경에 따라 (GUI 툴킷이 안 깔려 있거나 등의 이유로) 조용히
-# 비인터랙티브 백엔드(Agg)로 떨어질 수 있고, 그러면 plt.ion()/plt.pause()가
-# 에러 없이 그냥 아무 창도 안 띄운다(2026-08-24 실측 — 사용자 PC에서 콘솔
-# 로그만 찍히고 창이 안 떴음). Tk는 파이썬 표준 설치에 보통 같이 들어있어서
-# 가장 안전한 선택이고, 안 되면 Qt/Mac 순으로 시도한다.
+# import만 하면 환경에 따라(GUI 툴킷이 안 깔려 있는 등) 조용히 비인터랙티브
+# 백엔드(Agg)로 떨어질 수 있고, 그러면 plt.ion()/plt.pause()가 에러 없이
+# 그냥 아무 창도 안 띄운다. `matplotlib.use(name)` 자체는 해당 툴킷이 실제로
+# import 가능한지 즉시 검증하지 않고 나중에(첫 Figure 생성 시) 실패할 수도
+# 있어서(2026-08-24 실측 — try/except로 걸러지지 않고 그냥 조용히 넘어감),
+# 후보마다 실제로 캔버스를 하나 만들어봐서 확실히 되는지까지 확인한다.
+_INTERACTIVE_OK = False
 for _backend in ('TkAgg', 'Qt5Agg', 'QtAgg', 'MacOSX'):
   try:
-    matplotlib.use(_backend)
+    matplotlib.use(_backend, force=True)
+    import matplotlib.pyplot as plt
+    _test_fig = plt.figure()
+    plt.close(_test_fig)
+    _INTERACTIVE_OK = True
     break
   except Exception:
     continue
-import matplotlib.pyplot as plt
+if not _INTERACTIVE_OK:
+  import matplotlib.pyplot as plt
+  print(
+      '!!! 인터랙티브 GUI 백엔드를 하나도 못 찾았다(TkAgg/Qt5Agg/QtAgg/MacOSX '
+      '전부 실패) — 이대로 실행하면 창 없이 콘솔 로그만 찍히고 마우스 조작이 '
+      '안 된다.\n'
+      '    Linux: sudo apt install python3-tk  (또는 pip install PyQt5)\n'
+      '    Windows/Mac: 보통 Tk가 기본 포함이니 pip install matplotlib --upgrade로도 '
+      '해결 안 되면 pip install PyQt5\n'
+      f'    (지금 남은 백엔드: {matplotlib.get_backend()})',
+      file=sys.stderr)
+  sys.exit(1)
 
 from src.grasp_carry.config import CarryConfig
 from src.grasp_carry.env import FRAME_FIELDS, GraspCarry2D
@@ -59,6 +77,7 @@ from src.grasp_carry.policy import ScriptedCarryPolicy, _CEILING_Y
 from record_carry import draw_env
 
 _WAYPOINT_REACH_TOL = 5.0  # mm — 목표에 이 정도 가까우면 "도착"으로 보고 바로 다음 경유지
+_WANDER_SPEED_MULT = 2.5   # 방황 중 PD 리드 배수(명목 속도의 몇 배) — 실측 근거는 아래 참고
 
 
 class MouseState:
@@ -145,12 +164,18 @@ def collect_one_episode(env: GraspCarry2D, cfg: CarryConfig, rng: np.random.Gene
       if waypoint is None:
         waypoint = _sample_waypoint(env, rng)
         waypoint_ttl = int(rng.integers(waypoint_min_steps, waypoint_max_steps + 1))
-      # _goto(점진적, 리드 제한)가 아니라 목표를 그대로 직접 명령한다 — 멀리
-      # 있는 목표를 즉시 명령하면 PD 힘이 순간적으로 커져 진짜로 놓치는
-      # 일이 생긴다(사용자가 원한 "완전 무작위" 방황은 이 정도로 거칠어야
-      # 눈에 보인다 — _goto로 완만하게 다가가면 거의 절대 안 떨어뜨림,
-      # 2026-08-24 실측).
-      a = np.array([waypoint[0], waypoint[1], 0.0, 1.0], dtype=np.float32)
+      # 목표를 그대로 즉시 명령하면(리드 제한 없이) PD 힘이 순간적으로 커져
+      # 화면상 "순간이동"처럼 보일 만큼 빨라진다(사용자 지적, 2026-08-24) —
+      # 그렇다고 정책의 명목 속도(policy.speed, 1배)로 완만히 다가가면 이번엔
+      # 거의 절대 안 떨어뜨려서(0/15 실측) 방황의 의미가 없다. 절충으로
+      # `_goto`(PD로 매 스텝 조금씩만 다가감, 여전히 물리적으로 연속적인
+      # 움직임)를 쓰되 리드를 명목 속도의 배수로 키운다 — 실측(가짜 마우스로
+      # 10회씩): 1.0x=0/10, 1.5x=2/10, 2.0x=3/10, 2.5x=4/10, 3.0x=5/10,
+      # 4.0x=5/10(포화). 2.5배를 기본값으로 삼는다 — 대략 40%가 실제로
+      # 놓치는 정도면 "위험하지만 매번은 아닌" 느낌에 맞는다고 판단.
+      lead = policy.speed * _WANDER_SPEED_MULT
+      vlead = policy._lift_lead * _WANDER_SPEED_MULT
+      a = policy._goto(env, waypoint[0], waypoint[1], lead, 1.0, vlead=vlead)
       policy._step_i += 1  # __call__을 안 거치므로 내부 스텝 카운터를 직접 맞춘다
       waypoint_ttl -= 1
       ex, ey = float(env.gripper.pose[0]), float(env.gripper.pose[1])
