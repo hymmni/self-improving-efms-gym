@@ -3,7 +3,7 @@
 robomimic 벤치마크 위에서 Diffusion Policy를 학습·평가하는 시뮬레이션 실험 코드베이스.
 
 > **이 디렉토리는 원본 레포([github.com/Leejw221/manipulation_simulator](https://github.com/Leejw221/manipulation_simulator))에서
-> `self-improving-emfs-gym`으로 통합된, 축소된 서브셋이다** (`.git` 제거, ADR-007 참고).
+> `self-improving-efms-gym`으로 통합된, 축소된 서브셋이다** (`.git` 제거, ADR-007 참고).
 > 통합 목적은 원본 레포의 Diffusion Policy(square task) 위에 SI-EFM식 DDPO
 > self-improvement를 얹는 것이라, **diffusion policy + robomimic 인프라만** 가져왔다.
 > 원본 레포의 아래 기능들은 **이 서브셋에 없다**(README 나머지 부분에 언급이 남아있지만
@@ -20,7 +20,7 @@ robomimic 벤치마크 위에서 Diffusion Policy를 학습·평가하는 시뮬
 > `src/mani_sim/factory.py`·`envs/robomimic/factory.py` 상단의 "통합 시 축소" 주석 참고.
 >
 > Diffusion Policy(원본 그대로) + robomimic 인프라 위에 SI-EFM식 DDPO를 얹는 구현은
-> `self-improving-emfs-gym`의 `phases/`에서 설계·진행한다(이 디렉토리 자체는 원본
+> `self-improving-efms-gym`의 `phases/`에서 설계·진행한다(이 디렉토리 자체는 원본
 > 복사를 유지 — ADR-004/005 관례, DDPO 확장은 별도 파일로 추가될 예정).
 
 설계 배경·의존성 원칙·마일스톤별 상세 기록은 [`docs/plan.md`](docs/plan.md) 참고

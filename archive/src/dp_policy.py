@@ -1,7 +1,7 @@
 """사전학습 LeRobot Diffusion Policy를 로드해 gym-pusht에서 굴리는 헬퍼.
 
 이 파일은 **lerobot conda 환경**에서만 쓴다(torch/lerobot/gym-pusht 필요).
-STG 예측기 학습(JAX, emfs-gym 환경)과는 별개 프로세스로 롤아웃 데이터를 뽑는 용도.
+STG 예측기 학습(JAX, efms-gym 환경)과는 별개 프로세스로 롤아웃 데이터를 뽑는 용도.
 
 왜 수동 로드인가:
   lerobot 0.6.0은 정규화를 정책 밖 processor 파이프라인으로 분리했다. 그래서

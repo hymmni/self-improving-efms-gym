@@ -1,12 +1,12 @@
-# Self-Improving EMFs Gym — Pointmass
+# Self-Improving EFMs Gym — Pointmass
 
 Ghasemipour et al. 2025, *Self-Improving Embodied Foundation Models* (SI-EFM)의 공식 pointmass 데모를 재현한 클린 버전입니다. 2D 포인트매스가 목표 지점으로 이동하는 과제에서, 지도학습(Stage 1)만으로 학습한 정책이 자가개선(Stage 2, REINFORCE)을 거치며 성공률과 이동 효율이 향상되는 과정을 재현·관찰합니다.
 
 ## 1. 환경 설정
 
 ```bash
-conda create -n emfs-gym python=3.11 -y
-conda activate emfs-gym
+conda create -n efms-gym python=3.11 -y
+conda activate efms-gym
 pip install -r requirements.txt
 ```
 
@@ -75,7 +75,7 @@ Stage 2가 진행될수록 성공률이 100%로 수렴하고, 목표 도달에 �
 
 노트북(위 1~4절)이 재현 기준선이라면, 아래 모듈들은 그 위에서 **환경 교란(순간이동·외력·장애물·랜덤액션)을 가하며 steps-to-go 예측 분포를 관찰**하기 위한 도구입니다. 노트북 코드는 수정하지 않고 `pointmass_core.py`(노트북에서 추출한 모듈)를 재사용합니다.
 
-모든 명령은 `conda activate emfs-gym` 상태에서 레포 루트에서 실행합니다. 산출물(`checkpoints/`, `outputs/`)은 재생성 가능하므로 git에 추적되지 않습니다.
+모든 명령은 `conda activate efms-gym` 상태에서 레포 루트에서 실행합니다. 산출물(`checkpoints/`, `outputs/`)은 재생성 가능하므로 git에 추적되지 않습니다.
 
 ### 5.0 코드 구성
 

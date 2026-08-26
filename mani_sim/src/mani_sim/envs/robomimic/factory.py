@@ -6,7 +6,7 @@ docs/plan.md M0 확정 결과 참고: ObsUtils 초기화가 env 생성 전에 �
 import robomimic.utils.obs_utils as ObsUtils
 from robomimic.envs.env_robosuite import EnvRobosuite
 
-# [self-improving-emfs-gym 통합 시 축소] 원본 레포는 여기서 커스텀 robosuite env 등록
+# [self-improving-efms-gym 통합 시 축소] 원본 레포는 여기서 커스텀 robosuite env 등록
 # 부수효과로 `from mani_sim.envs.custom import door_cabinet_env`를 import했다. DoorCabinet은
 # robomimic 표준 task가 아닌 커스텀 task라 이 통합 범위(square)엔 필요 없어 가져오지 않았다.
 # square/lift/can 등 robosuite 표준 task는 robosuite 자체가 이미 등록하므로 이 import 없이도

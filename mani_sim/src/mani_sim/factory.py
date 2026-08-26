@@ -83,7 +83,7 @@ registry = Registry()
 
 # 등록 부수효과를 위해 import(각 모듈이 자기 자신을 @registry.register_*로 등록).
 #
-# [self-improving-emfs-gym 통합 시 축소] 원본 레포(github.com/Leejw221/manipulation_simulator)는
+# [self-improving-efms-gym 통합 시 축소] 원본 레포(github.com/Leejw221/manipulation_simulator)는
 # apo_system(SIRIUS/APO 가중치·KTO 연구), bc(bc_registrations/bc_rnn_policy), openvla,
 # 그 외 SARM/PICO/Piper 관련 코드를 포함하지만, 이 통합은 "diffusion policy + robomimic
 # 인프라"만 가져왔다(DDPO self-improvement 구현이 목적). apo_system/bc는 여기 없으므로
