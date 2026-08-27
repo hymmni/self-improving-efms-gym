@@ -55,16 +55,27 @@ grasp_carry/
     networks.py                                       # 신규 — pointmass_core.py의
                                                         #   build_continuous_act_discrete_dist_v0
                                                         #   (TIMER 네트워크) 포팅
-    scripts/                                           # 루트의 진입점 스크립트 25개 이동
-      calibrate_carry.py, collect_carry_bc_rollouts.py, collect_carry_demos.py,
-      collect_carry_teleop_detour.py, compare_carry_selectors.py, eval_carry_actor.py,
-      eval_carry_si.py, finetune_carry_diffusion.py, probe_carry_qstg.py,
-      record_carry_actor.py, record_carry_bc_stg_dist.py, record_carry.py,
-      record_carry_si.py, record_carry_si_video.py, record_carry_stg_dist.py,
-      rollout_carry_diff_stats.py, run_bc_stg_guided.py, train_carry_actor.py,
-      train_carry_actor_reinforce.py, train_carry_si.py, verify_carry_qstg_condb.py,
-      analyze_mu_jump_bimodal.py, analyze_mu_sigma_highrisk.py,
-      evaluate_stg_deadline.py, evaluate_stg_deadline_cdf.py
+    scripts/                                           # 루트의 진입점 스크립트 25개, 기능별
+                                                        #   하위 폴더로 분류해 이동 (mani_sim이
+                                                        #   policies/losses/runners/datasets로
+                                                        #   나누는 것과 같은 원리를 scripts/에도
+                                                        #   적용 — 25개라 mani_sim/scripts/처럼
+                                                        #   평평하게 두기엔 많음)
+      train/            # train_carry_actor.py, train_carry_actor_reinforce.py,
+                         #   train_carry_si.py, finetune_carry_diffusion.py
+      collect/           # collect_carry_demos.py, collect_carry_bc_rollouts.py,
+                         #   collect_carry_teleop_detour.py  (데이터셋 → pkl 생성)
+      record/            # record_carry.py, record_carry_actor.py,
+                         #   record_carry_bc_stg_dist.py, record_carry_si.py,
+                         #   record_carry_si_video.py, record_carry_stg_dist.py  (mp4 영상 생성,
+                         #   moviepy/mediapy 사용 확인됨)
+      analyze/           # calibrate_carry.py, compare_carry_selectors.py, eval_carry_actor.py,
+                         #   eval_carry_si.py, probe_carry_qstg.py, rollout_carry_diff_stats.py,
+                         #   run_bc_stg_guided.py, verify_carry_qstg_condb.py,
+                         #   analyze_mu_jump_bimodal.py, analyze_mu_sigma_highrisk.py,
+                         #   evaluate_stg_deadline.py, evaluate_stg_deadline_cdf.py
+                         #   (체크포인트를 읽어 평가·비교·진단·plot — 나머지 전부)
+                         # mani_sim/scripts/처럼 __init__.py 없이 네임스페이스 패키지로 둔다
   tests/                # 루트 tests/*.py 전부 이동 (test_policy.py, test_gripper.py,
                          #   test_env.py, test_reward.py, test_render.py, test_config.py,
                          #   test_ddpo.py, test_dstg.py, test_si_loop.py, test_stg_reward.py)
@@ -87,11 +98,11 @@ grasp_carry/
 | `from src.ddpo import build_ddpo` (flat 모듈) | `from grasp_carry.ddpo import build_ddpo` |
 | `from src.train_carry_predictor import concat_obs` | `from grasp_carry.train_carry_predictor import concat_obs` |
 | `from pointmass_core import build_continuous_act_discrete_dist_v0` | `from grasp_carry.networks import build_continuous_act_discrete_dist_v0` |
-| 스크립트 간 상호참조 (예: `eval_carry_actor.py` → `train_carry_actor.py`) | `from grasp_carry.scripts.train_carry_actor import ...` |
+| 스크립트 간 상호참조 (예: `eval_carry_actor.py` → `train_carry_actor.py`) | `from grasp_carry.scripts.train.train_carry_actor import ...` |
 
-실행은 `python -m grasp_carry.scripts.train_carry_actor ...` 형태로 바뀐다(mani_sim과 동일
-관례). editable install 없이 `PYTHONPATH=grasp_carry/src`만으로 import되게 한다(아래 Docker
-절 참고 — mani_sim/torch.Dockerfile과 동일 패턴).
+실행은 `python -m grasp_carry.scripts.train.train_carry_actor ...` 처럼 하위 폴더까지 포함한
+모듈 경로로 바뀐다. editable install 없이 `PYTHONPATH=grasp_carry/src`만으로 import되게 한다
+(아래 Docker 절 참고 — mani_sim/torch.Dockerfile과 동일 패턴).
 
 ### Docker / 문서
 
@@ -99,7 +110,7 @@ grasp_carry/
 - `docker-compose.yml`: 변경 불필요 (`working_dir: /workspace`가 이미 범용)
 - `DOCKER.md`: jax 서비스 대상 코드 설명(`train_carry_*.py, record_carry_*.py, src/grasp_carry/`
   → `grasp_carry/`)과 예시 명령(`python train_carry_actor.py` →
-  `python -m grasp_carry.scripts.train_carry_actor`) 갱신
+  `python -m grasp_carry.scripts.train.train_carry_actor`) 갱신
 
 ## B. `pointmass/` — 최소 골격
 
@@ -169,7 +180,7 @@ vendoring 코드가 아니다 — 원본 레포(`Leejw221/manipulation_simulator
 ## 검증
 
 - import 개수정 후 `pytest grasp_carry/tests/`, `pytest square_assembly/tests/` 둘 다 통과
-- `python -m grasp_carry.scripts.train_carry_actor --help` 등 대표 스크립트 몇 개 직접 실행해
+- `python -m grasp_carry.scripts.train.train_carry_actor --help` 등 대표 스크립트 몇 개 직접 실행해
   깨지지 않는지 확인
 - `square_assembly/src/square_assembly/scripts/*.py` 쪽도 가능한 범위에서 동일하게 확인
   (torch 스택이라 로컬에 CUDA 환경이 없으면 import까지만 확인 가능할 수 있음 — 이 경우
