@@ -4,7 +4,7 @@
 
 | venv | 대상 코드 | 스택 |
 |---|---|---|
-| `/opt/venvs/jax` | 리포지토리 루트 (`train_carry_*.py`, `record_carry_*.py`, `src/grasp_carry/` 등) | JAX + Haiku + Optax |
+| `/opt/venvs/jax` | `grasp_carry/` (`src/grasp_carry/scripts/`, `src/grasp_carry/` 등) | JAX + Haiku + Optax |
 | `/opt/venvs/torch` | `mani_sim/` | PyTorch + robosuite + mujoco |
 
 컨테이너는 리포지토리 전체를 `/workspace`에 bind-mount 합니다. 즉 컨테이너 안에서 코드를 고치는 게 아니라, 평소처럼 호스트(VSCode 등)에서 코드를 고치면 컨테이너에 바로 반영됩니다. **코드를 고쳐도 이미지 재빌드는 필요 없습니다.** 의존성(`requirements.txt`)을 바꿨을 때만 재빌드하면 됩니다.
@@ -45,6 +45,8 @@ docker compose run --rm dev bash
 source /opt/venvs/jax/bin/activate     # 2D 블록 이송 등 루트 코드
 source /opt/venvs/torch/bin/activate   # mani_sim
 ```
+
+jax venv 기준 실행 예시: `python -m grasp_carry.scripts.train.train_carry_actor ...`
 
 ## 3. GPU 있는 학습 서버에서 실행할 때
 
