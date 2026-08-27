@@ -1,0 +1,12 @@
+{
+  "name": "jax (2D grasp-carry, root)",
+  "dockerComposeFile": ["../../docker-compose.yml"],
+  "service": "jax",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"]
+    }
+  }
+}

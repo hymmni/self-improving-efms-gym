@@ -1,0 +1,31 @@
+services:
+  jax:
+    build:
+      context: .
+      dockerfile: docker/jax.Dockerfile
+    image: self-improving-gym/jax:latest
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - WANDB_API_KEY=${WANDB_API_KEY}
+    stdin_open: true
+    tty: true
+
+  torch:
+    build:
+      context: .
+      dockerfile: docker/torch.Dockerfile
+    image: self-improving-gym/torch:latest
+    working_dir: /workspace/mani_sim
+    volumes:
+      - .:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - WANDB_API_KEY=${WANDB_API_KEY}
+      - MUJOCO_GL=egl
+    stdin_open: true
+    tty: true

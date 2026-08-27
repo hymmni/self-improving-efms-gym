@@ -15,6 +15,9 @@ nbformat==5.10.4
 numpy==2.4.6
 optax==0.2.8
 pillow==11.3.0
+# src/grasp_carry/env.py, gripper.py 등의 2D 물리 엔진. 기존 requirements.txt에
+# 누락돼 있었음 (Docker 빌드로 발견) — 원래 개발 환경의 정확한 버전은 미상, 우선 최신으로 고정.
+pymunk==7.3.0
 tensorflow==2.21.0
 tensorflow-probability==0.25.0
 tf_keras==2.21.0
