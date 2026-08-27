@@ -22,7 +22,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
-from src.diffusion_act import DiffusionActNets
+from grasp_carry.diffusion_act import DiffusionActNets
 
 
 class DDPOFns(NamedTuple):

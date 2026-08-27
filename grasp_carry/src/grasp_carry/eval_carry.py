@@ -15,9 +15,9 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from .grasp_carry.config import CarryConfig
-from .grasp_carry.env import GraspCarry2D
-from .grasp_carry.policy import ScriptedCarryPolicy
+from .config import CarryConfig
+from .env import GraspCarry2D
+from .policy import ScriptedCarryPolicy
 
 
 def rollout(env: GraspCarry2D, policy: ScriptedCarryPolicy, seed: int) -> dict:

@@ -44,8 +44,8 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from pointmass_core import build_continuous_act_discrete_dist_v0
-from src.diffusion_act import build_diffusion_act_chunk, diffusion_loss
+from grasp_carry.networks import build_continuous_act_discrete_dist_v0
+from grasp_carry.diffusion_act import build_diffusion_act_chunk, diffusion_loss
 
 OBS_FIELDS = ('frame',)
 
@@ -301,8 +301,8 @@ def main():
         f'NLL={best["nll"]:.3f} bc={best["bc"]:.3f}')
 
   # ---- BC 정책 롤아웃 평가 (GraspCarry2D, 학습 데이터와 겹치지 않는 시드)
-  from src.grasp_carry.config import CarryConfig
-  from src.grasp_carry.env import GraspCarry2D
+  from grasp_carry.config import CarryConfig
+  from grasp_carry.env import GraspCarry2D
 
   if is_diff:
     _sample = jax.jit(lambda p, c, k: nets.sample_chunk(p, c, k))

@@ -33,8 +33,8 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from src.train_carry_dstg import build_dstg_net
-from src.train_carry_qstg import succ_cvar
+from grasp_carry.train_carry_dstg import build_dstg_net
+from grasp_carry.train_carry_qstg import succ_cvar
 
 
 # succ_cvar(probs, bin_vals, alpha)는 수학적으로 "확률질량 1짜리 카테고리컬
@@ -219,8 +219,8 @@ def _run_rollout_eval(reward: StgReward, bc_ckpt: str, episodes: int,
   # 순환 import 회피(run_bc_stg_guided.py가 src.* 모듈을 import하므로 여기서
   # 모듈 레벨에 두면 -m 실행 시 얽힐 수 있다 — 함수 내부 import로 늦춘다).
   from run_bc_stg_guided import BCStgGuided
-  from src.grasp_carry.config import CarryConfig
-  from src.grasp_carry.env import GraspCarry2D
+  from grasp_carry.config import CarryConfig
+  from grasp_carry.env import GraspCarry2D
 
   cfg = CarryConfig()
   env = GraspCarry2D(cfg)

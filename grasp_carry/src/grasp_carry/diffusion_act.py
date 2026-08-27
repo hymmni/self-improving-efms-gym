@@ -24,7 +24,7 @@ import jax
 import jax.numpy as jnp
 import haiku as hk
 
-from src.conditional_unet1d import conditional_unet1d
+from grasp_carry.conditional_unet1d import conditional_unet1d
 
 
 class DDPMSchedule(NamedTuple):
