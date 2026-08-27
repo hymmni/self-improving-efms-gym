@@ -1,12 +1,12 @@
 # 명령어 총정리
 
-모든 명령은 레포 루트(`~/Projects/self-improving-emfs-gym`)에서, `efms-gym` conda
+모든 명령은 레포 루트(`~/Projects/self-improving-gym`)에서, `self-improving-gym` conda
 환경으로 실행한다. GUI 뷰어는 X 디스플레이가 필요하다 — 원격 데스크톱/서버
 모니터에서는 명령 앞에 `DISPLAY=:1` 을 붙인다.
 
 ```bash
-conda activate efms-gym
-cd ~/Projects/self-improving-emfs-gym
+conda activate self-improving-gym
+cd ~/Projects/self-improving-gym
 ```
 
 ---

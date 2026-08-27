@@ -1,4 +1,4 @@
-# Self-Improving EFMs Gym — 프로젝트 규칙 (CLAUDE.md)
+# Self-Improving Gym — 프로젝트 규칙 (CLAUDE.md)
 
 ## 🚀 세션 시작 체크리스트
 새 세션을 시작할 때 반드시 수행하라:
