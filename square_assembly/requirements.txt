@@ -1,4 +1,4 @@
-# mani_sim 고정 의존성 (재현성 단일 출처). 버전 근거: docs/plan.md M0.
+# square_assembly 고정 의존성 (재현성 단일 출처). 버전 근거: docs/plan.md M0.
 --extra-index-url https://download.pytorch.org/whl/cu121
 
 torch==2.5.1+cu121
