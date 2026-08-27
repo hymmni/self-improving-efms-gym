@@ -535,7 +535,7 @@ def main():
 
   # best-so-far 체크포인트 — episodes_per_iter가 작으면(여기 32도 이 태스크엔 작다) 정점을
   # 찍고 다시 나빠지는 게 흔하다(2026-08-10 실측: it=30 성공률 50% -> it=40 9.4%). 마지막
-  # iteration만 저장하면 그 정점을 잃는다 — mani_sim/train_si.py에서 겪은 뒤 고친 것과
+  # iteration만 저장하면 그 정점을 잃는다 — square_assembly/train_si.py에서 겪은 뒤 고친 것과
   # 동일한 문제라 여기도 같은 방식으로 고친다.
   best_succ_rate, best_R_mean, best_it = -1.0, -np.inf, None
   out_root, out_ext = os.path.splitext(args.out)

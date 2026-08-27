@@ -13,8 +13,8 @@ experiments/
 docs/
 phases/
 
-mani_sim/outputs/
-mani_sim/results/
-mani_sim/data/
-mani_sim/.pytest_cache/
-mani_sim/src/mani_sim.egg-info/
+square_assembly/outputs/
+square_assembly/results/
+square_assembly/data/
+square_assembly/.pytest_cache/
+square_assembly/src/square_assembly.egg-info/

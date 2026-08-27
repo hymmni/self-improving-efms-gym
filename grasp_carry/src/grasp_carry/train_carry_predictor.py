@@ -11,7 +11,7 @@
 (`src/diffusion_act.py`, `real-stanford/diffusion_policy` 이식).
 `--horizon H`(기본 1, 기존 동작과 동일)로 액션 청킹을 켤 수 있다. H>1이면
 `--exec-horizon`(기본 H)만큼만 실행하고 새 관측으로 재추론하는 receding
-horizon 방식으로 롤아웃한다(mani_sim/3D 태스크와 같은 패턴). 2026-08-10:
+horizon 방식으로 롤아웃한다(square_assembly/3D 태스크와 같은 패턴). 2026-08-10:
 원래는 "매 스텝 새 절대 목표를 받는 구조라 청킹이 불필요하다"고 H=1로
 고정했었는데, 청킹을 쓰더라도 매 스텝 재추론해야 하는 게 아니라 exec-horizon
 개만 실행 후 재추론하면 되므로 그 논리가 청킹 자체를 막을 근거는 아니었다.

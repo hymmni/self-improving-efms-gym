@@ -50,9 +50,9 @@ references/                      # 원본 참조 (읽기 전용, 수정 금지)
 experiments/                     # 실험 기록
 scripts/                         # 하네스 실행기
 phases/                          # step 정의·실행 기록
-mani_sim/                        # robomimic/Diffusion Policy 서브프로젝트 (ADR-007) —
-                                  #   별도 스택(PyTorch), 별도 conda env. src/mani_sim/
-                                  #   구조·환경설정은 mani_sim/README.md 참고.
+square_assembly/                 # robomimic/Diffusion Policy 서브프로젝트 (ADR-007) —
+                                  #   별도 스택(PyTorch), 별도 conda env. src/square_assembly/
+                                  #   구조·환경설정은 square_assembly/README.md 참고.
 ```
 
 - 클린 버전은 레포 루트에 원본 파일명·내용 그대로 복사한다 (ADR-004).

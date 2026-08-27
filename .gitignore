@@ -6,9 +6,9 @@ __pycache__/
 .env
 
 # Harness — CLAUDE.md와 docs/(private/ 제외)는 공개 추적, 나머지 하네스 파일은 로컬 전용
-# 앞에 '/'를 붙여 레포 루트에만 적용시킨다 — 앵커 없이 'docs/'처럼 두면 mani_sim/docs/,
-# mani_sim/src/mani_sim/scripts/ 같은 서브프로젝트 내부의 같은 이름 디렉토리까지 전부
-# 무시돼버린다(mani_sim 통합 때 실제로 발견됨: mani_sim의 scripts/train.py가 이 규칙 때문에
+# 앞에 '/'를 붙여 레포 루트에만 적용시킨다 — 앵커 없이 'docs/'처럼 두면 square_assembly/docs/,
+# square_assembly/src/square_assembly/scripts/ 같은 서브프로젝트 내부의 같은 이름 디렉토리까지 전부
+# 무시돼버린다(square_assembly 통합 때 실제로 발견됨: square_assembly의 scripts/train.py가 이 규칙 때문에
 # 조용히 추적 안 될 뻔했다).
 .claude/
 /docs/private/

@@ -1,6 +1,6 @@
-# jax(2D grasp-carry) + torch(mani_sim) 스택 통합 이미지.
+# jax(2D grasp-carry) + torch(square_assembly) 스택 통합 이미지.
 # 서로 다른 pip 스택(CUDA 버전 포함)이라 이미지 안에서는 venv 2개로 분리한다.
-# From: /requirements.txt, mani_sim/requirements.txt
+# From: /requirements.txt, square_assembly/requirements.txt
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -23,22 +23,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 
-# jax venv — 별도 COPY+RUN으로 둬서 mani_sim/requirements.txt만 바뀔 때 이 레이어가 안 깨지게 함.
+# jax venv — 별도 COPY+RUN으로 둬서 square_assembly/requirements.txt만 바뀔 때 이 레이어가 안 깨지게 함.
 COPY requirements.txt ./requirements.txt
 RUN python3 -m venv /opt/venvs/jax \
     && /opt/venvs/jax/bin/pip install --no-cache-dir -r requirements.txt
 
 # torch venv
-COPY mani_sim/requirements.txt ./mani_sim/requirements.txt
+COPY square_assembly/requirements.txt ./square_assembly/requirements.txt
 RUN python3 -m venv /opt/venvs/torch \
-    && /opt/venvs/torch/bin/pip install --no-cache-dir -r mani_sim/requirements.txt
+    && /opt/venvs/torch/bin/pip install --no-cache-dir -r square_assembly/requirements.txt
 
-# grasp_carry/mani_sim 소스는 이미지에 굽지 않음 — 런타임에 bind-mount로 들어오고,
+# grasp_carry/square_assembly 소스는 이미지에 굽지 않음 — 런타임에 bind-mount로 들어오고,
 # PYTHONPATH가 그 경로들을 잡아주므로 jax venv에서 `import grasp_carry`가, torch venv에서
-# `import mani_sim`이 바로 됨. venv가 서로 다른 site-packages를 쓰므로 이렇게 경로를 합쳐
+# `import square_assembly`이 바로 됨. venv가 서로 다른 site-packages를 쓰므로 이렇게 경로를 합쳐
 # 놔도 서로의 의존성을 혼동하지 않는다.
 # (무거운 설치 레이어 뒤에 둬서, 이 값만 바꿀 때 위 pip install 캐시가 안 깨지게 함)
-ENV PYTHONPATH=/workspace/grasp_carry/src:/workspace/mani_sim/src
+ENV PYTHONPATH=/workspace/grasp_carry/src:/workspace/square_assembly/src
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

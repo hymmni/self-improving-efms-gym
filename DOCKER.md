@@ -1,11 +1,11 @@
 # Docker 개발 환경
 
-이 리포지토리에는 서로 호환되지 않는 두 개의 pip 의존성 스택(JAX/Haiku/Optax 루트 코드, PyTorch/robosuite/mujoco `mani_sim/`)이 있습니다. Docker 이미지/컨테이너는 **하나**로 통합하고, 그 안에서 venv 2개로 스택을 나눕니다.
+이 리포지토리에는 서로 호환되지 않는 두 개의 pip 의존성 스택(JAX/Haiku/Optax 루트 코드, PyTorch/robosuite/mujoco `square_assembly/`)이 있습니다. Docker 이미지/컨테이너는 **하나**로 통합하고, 그 안에서 venv 2개로 스택을 나눕니다.
 
 | venv | 대상 코드 | 스택 |
 |---|---|---|
 | `/opt/venvs/jax` | `grasp_carry/` (`src/grasp_carry/scripts/`, `src/grasp_carry/` 등) | JAX + Haiku + Optax |
-| `/opt/venvs/torch` | `mani_sim/` | PyTorch + robosuite + mujoco |
+| `/opt/venvs/torch` | `square_assembly/` | PyTorch + robosuite + mujoco |
 
 컨테이너는 리포지토리 전체를 `/workspace`에 bind-mount 합니다. 즉 컨테이너 안에서 코드를 고치는 게 아니라, 평소처럼 호스트(VSCode 등)에서 코드를 고치면 컨테이너에 바로 반영됩니다. **코드를 고쳐도 이미지 재빌드는 필요 없습니다.** 의존성(`requirements.txt`)을 바꿨을 때만 재빌드하면 됩니다.
 
@@ -83,7 +83,7 @@ xhost +local:docker
 컨테이너 안에서 바로 `pip install <패키지>`를 해도 **당장은** 잘 동작합니다. 하지만 그건 그 컨테이너가 살아있는 동안만 유효합니다 — `--rm`으로 뜬 컨테이너는 나가는 순간 사라지고, `--rm` 없이 재사용해도 언젠가 컨테이너를 지우거나(`down`), 이미지를 재빌드하거나, GPU 서버 등 다른 머신에서 새로 빌드하면 그 설치는 흔적도 없이 사라집니다.
 
 그래서 규칙:
-1. 계속 쓸 패키지라고 판단되면 → 해당 스택의 `requirements.txt`(jax는 루트 `requirements.txt`, torch는 `mani_sim/requirements.txt`)에 **버전을 명시해서** 추가
+1. 계속 쓸 패키지라고 판단되면 → 해당 스택의 `requirements.txt`(jax는 루트 `requirements.txt`, torch는 `square_assembly/requirements.txt`)에 **버전을 명시해서** 추가
 2. `docker compose build`로 재빌드해서 이미지에 영구 반영
 
 이 순서를 안 지키면, 지금 `pymunk`/`cmake`가 빠져있던 것과 같은 "숨은 의존성" 문제가 또 생깁니다.
