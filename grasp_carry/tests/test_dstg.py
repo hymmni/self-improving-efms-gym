@@ -20,7 +20,7 @@ DATA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 def _run_tiny_training(tmpdir, include_failures):
   out = os.path.join(tmpdir, 'succ' if not include_failures else 'fail',
                      'predictor.pkl')
-  cmd = [sys.executable, '-m', 'src.train_carry_dstg', '--data', DATA_PATH,
+  cmd = [sys.executable, '-m', 'grasp_carry.train_carry_dstg', '--data', DATA_PATH,
          '--steps', '50', '--eval-every', '25', '--no-early-stop',
          '--out', out]
   if include_failures:
