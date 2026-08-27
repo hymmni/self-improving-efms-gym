@@ -17,8 +17,8 @@ import jax.numpy as jnp
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.diffusion_act import build_diffusion_act_chunk
-from src.ddpo import build_ddpo, _posterior_mean
+from grasp_carry.diffusion_act import build_diffusion_act_chunk
+from grasp_carry.ddpo import build_ddpo, _posterior_mean
 
 OBS_DIM = 6
 CHUNK_DIM = 4

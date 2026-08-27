@@ -17,7 +17,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from train_carry_si import (compute_returns, compute_step_rewards,
+from grasp_carry.scripts.train.train_carry_si import (compute_returns, compute_step_rewards,
                             make_pair_index_table)
 
 

@@ -16,8 +16,8 @@ import jax.numpy as jnp
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.train_carry_dstg import build_dstg_net
-from src.carry_stg_reward import StgReward, _d_from_probs, calibrate_threshold
+from grasp_carry.train_carry_dstg import build_dstg_net
+from grasp_carry.carry_stg_reward import StgReward, _d_from_probs, calibrate_threshold
 
 OBS_DIM = 6
 LAYER_SIZES = (8, 8)

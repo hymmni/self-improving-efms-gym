@@ -12,11 +12,11 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import GraspCarry2D
-from src.grasp_carry.policy import ScriptedCarryPolicy
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import GraspCarry2D
+from grasp_carry.policy import ScriptedCarryPolicy
 
-from record_carry import draw_env, render_frame, view_limits
+from grasp_carry.scripts.record.record_carry import draw_env, render_frame, view_limits
 
 
 def _hold_action(env):

@@ -13,8 +13,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.gripper import Gripper
+from grasp_carry.config import CarryConfig
+from grasp_carry.gripper import Gripper
 
 
 def make_space(cfg):

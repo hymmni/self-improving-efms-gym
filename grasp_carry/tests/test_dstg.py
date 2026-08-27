@@ -11,7 +11,7 @@ import jax.numpy as jnp
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.train_carry_dstg import build_dstg_net
+from grasp_carry.train_carry_dstg import build_dstg_net
 
 DATA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          'data', 'grasp_carry_demos_v3.pkl')

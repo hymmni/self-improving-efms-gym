@@ -13,8 +13,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import FRAME_FIELDS, GraspCarry2D
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import FRAME_FIELDS, GraspCarry2D
 
 
 def hold_action(env):

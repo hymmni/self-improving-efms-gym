@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.grasp_carry.config import CarryConfig
+from grasp_carry.config import CarryConfig
 
 
 def test_is_dataclass_with_all_defaults():

@@ -7,7 +7,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.reward import stepwise_reward, discounted_returns, reward_from_config
+from grasp_carry.reward import stepwise_reward, discounted_returns, reward_from_config
 
 
 def test_baseline_equals_expectation_difference():
