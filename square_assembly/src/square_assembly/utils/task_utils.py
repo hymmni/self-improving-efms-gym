@@ -117,13 +117,7 @@ def derive_task_meta_from_zarr(task_cfg):
     task.yaml에 이미 손으로 정확히 적혀 있고(eval.py/collect.py도 원래 이 값을 그대로
     믿고 씀 - derive_task_meta 자체를 안 부름), 굳이 hdf5처럼 데이터에서 재검증할
     필요가 없어 이 함수 그대로 재사용해도 안전하다."""
-    import sys
-    from pathlib import Path
-
-    piper_capstone_dir = Path(__file__).resolve().parents[3] / "square_assembly_external" / "piper_capstone"
-    if str(piper_capstone_dir) not in sys.path:
-        sys.path.insert(0, str(piper_capstone_dir))
-    from replay_buffer import ReplayBuffer
+    from square_assembly.datasets.replay_buffer import ReplayBuffer
 
     buffer = ReplayBuffer.create_from_path(str(task_cfg.zarr_path), mode="r")
     obs_dims = {k: int(buffer.data[k].shape[-1]) for k in task_lowdim_keys(task_cfg) if k in buffer.data}

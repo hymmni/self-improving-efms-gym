@@ -6,20 +6,14 @@ convert_lerobot_to_zarr.py로 변환)용. robomimic_dataset.py의 RobomimicSeque
 diffusion_trainer.py가 데이터 소스만 바꿔 그대로 재사용한다(weighting 모듈도 이 일반
 계약만 보고 동작 - robomimic 내부 API에 의존 안 함, 2026-07-26 확인).
 
-ReplayBuffer 자체는 square_assembly_external/piper_capstone/replay_buffer.py에 vendoring된
+ReplayBuffer 자체는 square_assembly/src/square_assembly/datasets/replay_buffer.py에 있는
 FLARE 원본(zarr+numcodecs만 있으면 됨, lerobot/flare 패키지 전체 불필요)을 그대로 쓴다.
 """
-
-import sys
-from pathlib import Path
 
 import numpy as np
 import torch
 
-_PIPER_CAPSTONE_DIR = Path(__file__).resolve().parents[3] / "square_assembly_external" / "piper_capstone"
-if str(_PIPER_CAPSTONE_DIR) not in sys.path:
-    sys.path.insert(0, str(_PIPER_CAPSTONE_DIR))
-from replay_buffer import ReplayBuffer  # noqa: E402
+from square_assembly.datasets.replay_buffer import ReplayBuffer
 
 
 class ZarrSequenceDataset(torch.utils.data.Dataset):
