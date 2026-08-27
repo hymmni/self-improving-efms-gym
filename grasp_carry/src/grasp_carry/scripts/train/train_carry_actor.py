@@ -23,9 +23,9 @@ import jax.numpy as jnp
 import haiku as hk
 import optax
 
-from probe_carry_qstg import load_ckpt as load_qstg_ckpt
-from src.train_carry_qstg import split_success_fail, succ_mean_quantile, succ_cvar
-from src.grasp_carry.config import CarryConfig
+from grasp_carry.scripts.analyze.probe_carry_qstg import load_ckpt as load_qstg_ckpt
+from grasp_carry.train_carry_qstg import split_success_fail, succ_mean_quantile, succ_cvar
+from grasp_carry.config import CarryConfig
 
 LEAD_MIN, LEAD_MAX = 0.4, 200.0
 _MIN_EXECUTED_DX = 1.0
@@ -48,7 +48,7 @@ def gather_states(data_path, cfg):
   target_y)를 뽑는다. `probe_carry_qstg.py`와 같은 필터."""
   with open(data_path, 'rb') as fp:
     data = pickle.load(fp)
-  from src.grasp_carry.env import FRAME_FIELDS
+  from grasp_carry.env import FRAME_FIELDS
   ex_i = FRAME_FIELDS.index('ee_x')
   obs_hist = 4
   last0 = (obs_hist - 1) * len(FRAME_FIELDS)

@@ -42,11 +42,11 @@ import pickle
 import numpy as np
 import jax.numpy as jnp
 
-from probe_carry_qstg import load_ckpt
-from src.train_carry_qstg import split_success_fail, succ_mean_quantile
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import GraspCarry2D
-from src.grasp_carry.policy import ScriptedCarryPolicy
+from grasp_carry.scripts.analyze.probe_carry_qstg import load_ckpt
+from grasp_carry.train_carry_qstg import split_success_fail, succ_mean_quantile
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import GraspCarry2D
+from grasp_carry.policy import ScriptedCarryPolicy
 
 # 후보 리드(mm). calibrate_carry.py의 스윕과 같은 격자를, 학습 데이터를 모은
 # 상한(`collect_carry_demos.py --speed 150`)까지로 자른 것.

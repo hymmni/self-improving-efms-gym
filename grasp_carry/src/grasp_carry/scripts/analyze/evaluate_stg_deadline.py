@@ -22,7 +22,7 @@ import pickle
 
 import numpy as np
 
-from src.carry_stg_reward import StgReward, calibrate_threshold, _val_episode_ids
+from grasp_carry.carry_stg_reward import StgReward, calibrate_threshold, _val_episode_ids
 
 
 def main():

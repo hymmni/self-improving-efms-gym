@@ -23,11 +23,11 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import imageio.v2 as imageio
 
-from record_carry import draw_env, _ee_block_dist
-from src.carry_stg_reward import StgReward
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import GraspCarry2D
-from src.grasp_carry.policy import ScriptedCarryPolicy
+from grasp_carry.scripts.record.record_carry import draw_env, _ee_block_dist
+from grasp_carry.carry_stg_reward import StgReward
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import GraspCarry2D
+from grasp_carry.policy import ScriptedCarryPolicy
 
 plt.rcParams['font.family'] = ['Noto Sans CJK JP', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False

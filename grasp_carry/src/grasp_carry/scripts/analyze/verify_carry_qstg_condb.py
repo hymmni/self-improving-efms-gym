@@ -20,10 +20,10 @@ import pickle
 
 import numpy as np
 
-from probe_carry_qstg import SLOW_LEAD, FAST_LEAD, run_probe
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import GraspCarry2D
-from src.grasp_carry.policy import ScriptedCarryPolicy
+from grasp_carry.scripts.analyze.probe_carry_qstg import SLOW_LEAD, FAST_LEAD, run_probe
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import GraspCarry2D
+from grasp_carry.policy import ScriptedCarryPolicy
 
 
 def rollout(seed: int, speed: float, cfg: CarryConfig) -> dict:

@@ -19,9 +19,9 @@ import pickle
 import numpy as np
 import jax.numpy as jnp
 
-from src.train_carry_qstg import (build_qstg_net, split_success_fail,
+from grasp_carry.train_carry_qstg import (build_qstg_net, split_success_fail,
                                   succ_mean_quantile)
-from src.grasp_carry.config import CarryConfig
+from grasp_carry.config import CarryConfig
 
 # 명목/공격적 리드(mm) — calibrate_carry.py의 스윕에서 쓴 것과 같은 스케일.
 SLOW_LEAD = 12.5

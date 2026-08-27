@@ -27,10 +27,10 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from rollout_carry_diff_stats import load_diff_policy
-from src.train_carry_predictor import concat_obs
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import FRAME_FIELDS, GraspCarry2D
+from grasp_carry.scripts.analyze.rollout_carry_diff_stats import load_diff_policy
+from grasp_carry.train_carry_predictor import concat_obs
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import FRAME_FIELDS, GraspCarry2D
 
 
 def collect(diff_ckpt: str, n_episodes: int, seed0: int) -> dict:

@@ -60,9 +60,9 @@ import jax.numpy as jnp
 import haiku as hk
 import optax
 
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import GraspCarry2D
-from src.grasp_carry.policy import ScriptedCarryPolicy
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import GraspCarry2D
+from grasp_carry.policy import ScriptedCarryPolicy
 
 LEAD_MIN, LEAD_MAX = 0.4, 200.0
 NOMINAL_SPEED = 150.0   # _lift_lead(연직 리드)를 정하는 값. 데이터 수집 때와 통일.
@@ -79,7 +79,7 @@ def load_d_function(ckpt_path: str):
   """
   with open(ckpt_path, 'rb') as fp:
     ck = pickle.load(fp)
-  from src.diffusion_act import build_diffusion_act_chunk
+  from grasp_carry.diffusion_act import build_diffusion_act_chunk
   m = ck['meta']
   act_dim = len(ck['norm_stats']['act_mean'])
   nets = build_diffusion_act_chunk(

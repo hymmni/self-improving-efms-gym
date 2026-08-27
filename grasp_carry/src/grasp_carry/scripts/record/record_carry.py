@@ -25,9 +25,9 @@ import imageio.v2 as imageio
 plt.rcParams['font.family'] = ['Noto Sans CJK JP', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import GraspCarry2D
-from src.grasp_carry.policy import ScriptedCarryPolicy
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import GraspCarry2D
+from grasp_carry.policy import ScriptedCarryPolicy
 
 # 작업 영역 크롭의 기본 상단(y, mm) — 정상 속도 범위(<=60mm/스텝)에서 실측한
 # EE 최저점(~182mm)보다 넉넉히 낮다(=화면 위쪽으로 더 크게 잡는다). 4속도(20/

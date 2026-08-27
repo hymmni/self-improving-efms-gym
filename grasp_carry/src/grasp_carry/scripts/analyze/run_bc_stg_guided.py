@@ -28,11 +28,11 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from probe_carry_qstg import load_ckpt as load_qstg_ckpt
-from src.diffusion_act import build_diffusion_act_chunk
-from src.train_carry_qstg import split_success_fail, succ_mean_quantile
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import GraspCarry2D
+from grasp_carry.scripts.analyze.probe_carry_qstg import load_ckpt as load_qstg_ckpt
+from grasp_carry.diffusion_act import build_diffusion_act_chunk
+from grasp_carry.train_carry_qstg import split_success_fail, succ_mean_quantile
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import GraspCarry2D
 
 K_CANDIDATES = 8
 

@@ -29,9 +29,9 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from probe_carry_qstg import load_ckpt as load_qstg_ckpt
-from src.train_carry_qstg import split_success_fail, succ_mean_quantile
-from src.diffusion_act import build_diffusion_act_chunk
+from grasp_carry.scripts.analyze.probe_carry_qstg import load_ckpt as load_qstg_ckpt
+from grasp_carry.train_carry_qstg import split_success_fail, succ_mean_quantile
+from grasp_carry.diffusion_act import build_diffusion_act_chunk
 
 
 def load_diffusion_policy(ckpt_path):

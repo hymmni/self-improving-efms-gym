@@ -25,7 +25,7 @@ import pickle
 
 import numpy as np
 
-from src.carry_stg_reward import StgReward, _val_episode_ids
+from grasp_carry.carry_stg_reward import StgReward, _val_episode_ids
 
 
 def episode_rule_eval(eid, val_eps, is_succ_step, signal, thresh_grid, mode_name):

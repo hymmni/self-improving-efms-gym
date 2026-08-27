@@ -40,10 +40,10 @@ from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 
-from src.eval_carry import rollout
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import GraspCarry2D
-from src.grasp_carry.policy import ScriptedCarryPolicy
+from grasp_carry.eval_carry import rollout
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import GraspCarry2D
+from grasp_carry.policy import ScriptedCarryPolicy
 
 # 검증 3의 기본 스윕. 첫 값은 로봇 명목 리드(`max_accel/k_p` = 12.5mm)이고
 # 나머지는 그 배수다. 명목보다 큰 리드는 가속도 스펙을 넘는 명령이지만,

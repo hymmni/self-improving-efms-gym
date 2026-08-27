@@ -17,8 +17,8 @@ r"""Phase 4 step 4 — 대조군 + 3개 SI arm을 같은 시드 블록으로 평
 
 import argparse
 
-from run_bc_stg_guided import BCStgGuided, run, demos_per_1k_with_reset
-from src.grasp_carry.config import CarryConfig
+from grasp_carry.scripts.analyze.run_bc_stg_guided import BCStgGuided, run, demos_per_1k_with_reset
+from grasp_carry.config import CarryConfig
 
 POLICIES = [
     ('control (no SI)', 'checkpoints/grasp_carry_diff100/predictor.pkl'),

@@ -26,12 +26,12 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from src.train_carry_predictor import (
+from grasp_carry.train_carry_predictor import (
     make_normalizers, concat_obs, OBS_FIELDS)
-from src.diffusion_act import build_diffusion_act_chunk
-from src.carry_stg_reward import StgReward
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import GraspCarry2D
+from grasp_carry.diffusion_act import build_diffusion_act_chunk
+from grasp_carry.carry_stg_reward import StgReward
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import GraspCarry2D
 
 
 def load_diff_policy(ckpt_path):

@@ -43,11 +43,11 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from src.diffusion_act import build_diffusion_act_chunk
-from src.ddpo import build_ddpo
-from src.carry_stg_reward import StgReward, calibrate_threshold, _val_episode_ids
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import GraspCarry2D
+from grasp_carry.diffusion_act import build_diffusion_act_chunk
+from grasp_carry.ddpo import build_ddpo
+from grasp_carry.carry_stg_reward import StgReward, calibrate_threshold, _val_episode_ids
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import GraspCarry2D
 
 # From: run_bc_stg_guided.py load_bc_policy() — 대상 체크포인트가 학습된 고정 구조.
 LAYER_SIZES = (256, 256, 256)

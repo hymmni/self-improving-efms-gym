@@ -71,10 +71,10 @@ if not _INTERACTIVE_OK:
       file=sys.stderr)
   sys.exit(1)
 
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import FRAME_FIELDS, GraspCarry2D
-from src.grasp_carry.policy import ScriptedCarryPolicy, _CEILING_Y
-from record_carry import draw_env
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import FRAME_FIELDS, GraspCarry2D
+from grasp_carry.policy import ScriptedCarryPolicy, _CEILING_Y
+from grasp_carry.scripts.record.record_carry import draw_env
 
 _WAYPOINT_REACH_TOL = 5.0  # mm — 목표에 이 정도 가까우면 "도착"으로 보고 바로 다음 경유지
 _WANDER_SPEED_MULT = 2.5   # 방황 중 PD 리드 배수(명목 속도의 몇 배) — 실측 근거는 아래 참고

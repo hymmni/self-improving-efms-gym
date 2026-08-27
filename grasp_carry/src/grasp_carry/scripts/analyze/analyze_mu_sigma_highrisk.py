@@ -36,7 +36,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy import stats
 
-from src.carry_stg_reward import StgReward, _val_episode_ids
+from grasp_carry.carry_stg_reward import StgReward, _val_episode_ids
 
 plt.rcParams['font.family'] = ['Noto Sans CJK JP', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False

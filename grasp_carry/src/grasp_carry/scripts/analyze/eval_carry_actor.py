@@ -13,10 +13,10 @@ import pickle
 import numpy as np
 import jax.numpy as jnp
 
-from train_carry_actor import build_actor, LEAD_MIN, LEAD_MAX
-from run_bc_stg_guided import run, demos_per_1k_with_reset
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.policy import ScriptedCarryPolicy
+from grasp_carry.scripts.train.train_carry_actor import build_actor, LEAD_MIN, LEAD_MAX
+from grasp_carry.scripts.analyze.run_bc_stg_guided import run, demos_per_1k_with_reset
+from grasp_carry.config import CarryConfig
+from grasp_carry.policy import ScriptedCarryPolicy
 
 NOMINAL_SPEED = 150.0   # 연직 리드(_lift_lead)를 정하는 값 — 데이터 수집 때와 통일
 

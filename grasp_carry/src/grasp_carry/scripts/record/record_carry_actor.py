@@ -19,11 +19,11 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import imageio.v2 as imageio
 
-from record_carry import draw_env, _ee_block_dist
-from eval_carry_actor import ActorSelector, NOMINAL_SPEED
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import GraspCarry2D
-from src.grasp_carry.policy import ScriptedCarryPolicy
+from grasp_carry.scripts.record.record_carry import draw_env, _ee_block_dist
+from grasp_carry.scripts.analyze.eval_carry_actor import ActorSelector, NOMINAL_SPEED
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import GraspCarry2D
+from grasp_carry.policy import ScriptedCarryPolicy
 
 plt.rcParams['font.family'] = ['Noto Sans CJK JP', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False

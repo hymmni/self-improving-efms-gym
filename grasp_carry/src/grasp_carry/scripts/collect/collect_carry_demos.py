@@ -46,9 +46,9 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from src.grasp_carry.config import CarryConfig
-from src.grasp_carry.env import FRAME_FIELDS, GraspCarry2D
-from src.grasp_carry.policy import ScriptedCarryPolicy
+from grasp_carry.config import CarryConfig
+from grasp_carry.env import FRAME_FIELDS, GraspCarry2D
+from grasp_carry.policy import ScriptedCarryPolicy
 
 
 def collect(n_episodes: int, explore_range: Optional[Tuple[float, float]] = None,
