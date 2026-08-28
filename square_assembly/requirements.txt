@@ -34,6 +34,11 @@ scipy
 
 # 데이터·시각화
 h5py
+# zarr==2.x 고정: datasets/replay_buffer.py가 zarr v2 스타일 API(root["data"] 딕셔너리 접근)를
+# 쓰는데 zarr 3.x는 API가 크게 바뀜(그룹/배열 접근 방식 변경) — 미검증 상태였던 숨은 의존성이라
+# 원래 requirements.txt에 아예 없었음(mani_sim_external/이 git 미추적이라 발견 안 됨, Task 8에서
+# 정식 추적 모듈로 편입하며 발견).
+zarr==2.18.7
 huggingface_hub
 imageio>=2.37.3
 imageio-ffmpeg
