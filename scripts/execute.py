@@ -9,6 +9,7 @@ Usage:
 import argparse
 import contextlib
 import json
+import re
 import subprocess
 import sys
 import threading
@@ -19,6 +20,46 @@ from pathlib import Path
 from typing import Optional
 
 ROOT = Path(__file__).resolve().parent.parent
+
+_TASK_HEADER_RE = re.compile(r"^###\s+Task\s+(\d+):\s*(.+?)\s*$", re.MULTILINE)
+
+
+def _slugify(title: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", title.strip().lower())
+    return slug.strip("-")
+
+
+def parse_plan(text: str) -> dict:
+    """writing-plans 체크박스 플랜을 헤더 + task 목록으로 파싱한다.
+
+    Returns:
+        {
+            "header": str,   # 첫 '### Task' 줄 이전 전체 (Goal/Architecture/
+                              # Global Constraints 등) — 모든 task 프롬프트에
+                              # 공통으로 포함된다.
+            "tasks": [
+                {"task": int, "title": str, "name": str, "raw": str},
+                ...  # task 번호 오름차순
+            ],
+        }
+    raw: 그 task의 '### Task N: <Title>' 줄부터 다음 '### Task' 줄 직전(또는
+    파일 끝)까지 원문 그대로.
+    name: <Title>을 kebab-case로 슬러그화한 것 (커밋 제목/브랜치 폴백에 사용).
+    """
+    matches = list(_TASK_HEADER_RE.finditer(text))
+    header = text[: matches[0].start()] if matches else text
+    tasks = []
+    for i, m in enumerate(matches):
+        start = m.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        tasks.append({
+            "task": int(m.group(1)),
+            "title": m.group(2),
+            "name": _slugify(m.group(2)),
+            "raw": text[start:end].rstrip() + "\n",
+        })
+    tasks.sort(key=lambda t: t["task"])
+    return {"header": header, "tasks": tasks}
 
 
 @contextlib.contextmanager

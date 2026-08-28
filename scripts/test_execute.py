@@ -172,3 +172,69 @@ class TestProgressIndicator:
         with ex.progress_indicator("test") as pi:
             time.sleep(0.2)
         assert pi.elapsed > 0
+
+
+# ---------------------------------------------------------------------------
+# parse_plan
+# ---------------------------------------------------------------------------
+
+class TestParsePlan:
+    SAMPLE = """# Example Plan
+
+**Goal:** build the thing
+
+## Global Constraints
+
+- constraint one
+
+---
+
+### Task 1: Core Policy Network
+
+**Files:**
+- Create: `src/policy.py`
+
+- [ ] **Step 1: do it**
+
+body text
+
+### Task 2: Env Wrapper
+
+- [ ] **Step 1: do it**
+
+more body
+"""
+
+    def test_header_excludes_first_task(self):
+        result = ex.parse_plan(self.SAMPLE)
+        assert "### Task 1" not in result["header"]
+        assert "Global Constraints" in result["header"]
+
+    def test_two_tasks_parsed_in_order(self):
+        result = ex.parse_plan(self.SAMPLE)
+        assert [t["task"] for t in result["tasks"]] == [1, 2]
+
+    def test_title_and_slug(self):
+        result = ex.parse_plan(self.SAMPLE)
+        assert result["tasks"][0]["title"] == "Core Policy Network"
+        assert result["tasks"][0]["name"] == "core-policy-network"
+
+    def test_raw_spans_to_next_task_header(self):
+        result = ex.parse_plan(self.SAMPLE)
+        assert "### Task 1: Core Policy Network" in result["tasks"][0]["raw"]
+        assert "src/policy.py" in result["tasks"][0]["raw"]
+        assert "### Task 2" not in result["tasks"][0]["raw"]
+
+    def test_last_task_raw_runs_to_eof(self):
+        result = ex.parse_plan(self.SAMPLE)
+        assert "more body" in result["tasks"][1]["raw"]
+
+    def test_no_tasks_returns_empty_list(self):
+        result = ex.parse_plan("# Just a header\n\nno tasks here")
+        assert result["tasks"] == []
+        assert "Just a header" in result["header"]
+
+    def test_slug_handles_punctuation(self):
+        text = "### Task 1: Fix DB/Cache (v2)!\n\nbody\n"
+        result = ex.parse_plan(text)
+        assert result["tasks"][0]["name"] == "fix-db-cache-v2"
