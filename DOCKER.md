@@ -15,7 +15,7 @@ VS Code에 [Dev Containers 확장](https://marketplace.visualstudio.com/items?it
 
 1. `Cmd/Ctrl+Shift+P` → `Dev Containers: Reopen in Container` (컨테이너 하나만 뜨므로 선택 메뉴 없음)
 2. 컨테이너 안에서 `Cmd/Ctrl+Shift+P` → `File: Open Workspace from File...` → `self-improving-gym.code-workspace` 선택 (최초 1회만 하면 이후 그대로 유지됨)
-3. 이제 창 하나에 폴더 루트(jax) + `mani_sim`(torch)가 각각 별도 루트로 열리고, 폴더별로 다른 Python 인터프리터(`.vscode/settings.json`, `mani_sim/.vscode/settings.json`)가 자동 적용됩니다 — 어느 쪽 코드를 열어도 인텔리센스/디버거가 맞는 venv를 씀
+3. 이제 창 하나에 폴더 루트(jax) + `square_assembly`(torch)가 각각 별도 루트로 열리고, 폴더별로 다른 Python 인터프리터(`.vscode/settings.json`, `square_assembly/.vscode/settings.json`)가 자동 적용됩니다 — 어느 쪽 코드를 열어도 인텔리센스/디버거가 맞는 venv를 씀
 4. 터미널은 각각 열어서 `source /opt/venvs/jax/bin/activate` / `source /opt/venvs/torch/bin/activate` 해두면 바로 실행 가능
 
 컨테이너/창 재시작이 필요 없으니, 두 스택을 오가며 작업해도 VS Code를 하나만 켜두면 됩니다.
@@ -43,7 +43,7 @@ docker compose run --rm dev bash
 
 ```bash
 source /opt/venvs/jax/bin/activate     # 2D 블록 이송 등 루트 코드
-source /opt/venvs/torch/bin/activate   # mani_sim
+source /opt/venvs/torch/bin/activate   # square_assembly
 ```
 
 jax venv 기준 실행 예시: `python -m grasp_carry.scripts.train.train_carry_actor ...`
