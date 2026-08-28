@@ -65,7 +65,7 @@ projects/                        # 연구 프로젝트 폴더 모음
                                   #     구조·환경설정은 projects/square_assembly/README.md 참고.
 ```
 
-> ⚠️ 위 트리는 conflict 해소 시점 기준으로, `configs/`, `docker/` 등 최근 추가된 최상위 디렉토리는 아직 반영하지 않았다(`archive/`는 정리 완료 — `projects/pointmass/archive/`, `projects/grasp_carry/archive/`로 흡수됨).
+> ⚠️ 위 트리는 conflict 해소 시점 기준으로, `docker/` 등 최근 추가된 최상위 디렉토리는 아직 반영하지 않았다(`archive/`는 정리 완료 — `projects/pointmass/archive/`, `projects/grasp_carry/archive/`로 흡수됨. 루트 `configs/`는 죽은 phase-2 설정 스냅샷이라 삭제됨).
 
 - 클린 버전은 레포 루트에 원본 파일명·내용 그대로 복사한다 (ADR-004).
 - 2차 목표의 확장 코드도 루트에 추가한다 (원본 노트북은 수정하지 않고 별도 파일로 — 4절 참조).
