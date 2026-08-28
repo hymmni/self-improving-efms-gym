@@ -238,3 +238,46 @@ more body
         text = "### Task 1: Fix DB/Cache (v2)!\n\nbody\n"
         result = ex.parse_plan(text)
         assert result["tasks"][0]["name"] == "fix-db-cache-v2"
+
+
+# ---------------------------------------------------------------------------
+# plan state (create/load/save)
+# ---------------------------------------------------------------------------
+
+class TestPlanState:
+    PARSED = {
+        "header": "# P",
+        "tasks": [
+            {"task": 1, "title": "A", "name": "a", "raw": "..."},
+            {"task": 2, "title": "B", "name": "b", "raw": "..."},
+        ],
+    }
+
+    def test_state_path_swaps_extension(self, tmp_path):
+        plan = tmp_path / "2026-08-27-foo.md"
+        assert ex.state_path_for(plan) == tmp_path / "2026-08-27-foo.state.json"
+
+    def test_creates_from_parsed_when_missing(self, tmp_path):
+        plan = tmp_path / "foo.md"
+        state = ex.load_or_create_state(plan, self.PARSED)
+        assert [t["task"] for t in state["tasks"]] == [1, 2]
+        assert state["tasks"][0]["status"] == "pending"
+        assert state["tasks"][0]["attempts"] == []
+        assert ex.state_path_for(plan).exists()
+
+    def test_loads_existing_without_overwriting(self, tmp_path):
+        plan = tmp_path / "foo.md"
+        ex.load_or_create_state(plan, self.PARSED)
+        state = ex.load_or_create_state(plan, self.PARSED)  # 두 번째 호출
+        state["tasks"][0]["status"] = "completed"
+        ex.save_state(plan, state)
+        reloaded = ex.load_or_create_state(plan, self.PARSED)
+        assert reloaded["tasks"][0]["status"] == "completed"
+
+    def test_save_then_load_roundtrip(self, tmp_path):
+        plan = tmp_path / "foo.md"
+        state = ex.load_or_create_state(plan, self.PARSED)
+        state["completed_at"] = "2026-08-27T00:00:00+0900"
+        ex.save_state(plan, state)
+        raw = json.loads(ex.state_path_for(plan).read_text())
+        assert raw["completed_at"] == "2026-08-27T00:00:00+0900"

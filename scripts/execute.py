@@ -62,6 +62,41 @@ def parse_plan(text: str) -> dict:
     return {"header": header, "tasks": tasks}
 
 
+def now_kst() -> str:
+    return datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
+def state_path_for(plan_path: Path) -> Path:
+    return plan_path.with_suffix("").with_suffix(".state.json")
+
+
+def load_or_create_state(plan_path: Path, parsed: dict) -> dict:
+    sp = state_path_for(plan_path)
+    if sp.exists():
+        return json.loads(sp.read_text(encoding="utf-8"))
+    state = {
+        "plan_file": plan_path.name,
+        "created_at": now_kst(),
+        "completed_at": None,
+        "tasks": [
+            {
+                "task": t["task"], "name": t["name"], "status": "pending",
+                "attempts": [], "started_at": None, "completed_at": None,
+                "summary": None, "commit_subject": None,
+                "error_message": None, "blocked_reason": None,
+            }
+            for t in parsed["tasks"]
+        ],
+    }
+    save_state(plan_path, state)
+    return state
+
+
+def save_state(plan_path: Path, state: dict) -> None:
+    sp = state_path_for(plan_path)
+    sp.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 @contextlib.contextmanager
 def progress_indicator(label: str):
     """터미널 진행 표시기. with 문으로 사용하며 .elapsed 로 경과 시간을 읽는다."""
@@ -112,7 +147,7 @@ class StepExecutor:
     # --- timestamps ---
 
     def _stamp(self) -> str:
-        return datetime.now(self.TZ).strftime("%Y-%m-%dT%H:%M:%S%z")
+        return now_kst()
 
     # --- JSON I/O ---
 
