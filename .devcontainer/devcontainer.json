@@ -1,7 +1,7 @@
 {
-  "name": "jax (2D grasp-carry, root)",
-  "dockerComposeFile": ["../../docker-compose.yml"],
-  "service": "jax",
+  "name": "self-improving-gym (jax + torch)",
+  "dockerComposeFile": ["../docker-compose.yml"],
+  "service": "dev",
   "workspaceFolder": "/workspace",
   "shutdownAction": "stopCompose",
   "customizations": {

@@ -2,16 +2,7 @@
 # 사용법: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 # (nvidia-container-toolkit이 설치돼 있어야 함: https://github.com/NVIDIA/nvidia-container-toolkit)
 services:
-  jax:
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-
-  torch:
+  dev:
     deploy:
       resources:
         reservations:

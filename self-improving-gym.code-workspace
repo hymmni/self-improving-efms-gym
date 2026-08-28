@@ -1,0 +1,6 @@
+{
+  "folders": [
+    { "name": "jax (root)", "path": "." },
+    { "name": "torch (mani_sim)", "path": "mani_sim" }
+  ]
+}
