@@ -45,7 +45,7 @@
 **결정**: robomimic 벤치마크(square task) 위에서 Diffusion Policy를 학습·평가하는
 외부 레포(`github.com/Leejw221/manipulation_simulator`)를 `.git`을 제거하고
 레포의 `projects/square_assembly/` 서브디렉토리로 통합한다. ADR-003이 고정한 JAX/Haiku 스택과
-별개로, `projects/square_assembly/`은 PyTorch/diffusers/robomimic/robosuite/mujoco 스택을 그대로
+별개로, `projects/square_assembly/`는 PyTorch/diffusers/robomimic/robosuite/mujoco 스택을 그대로
 쓴다(독립 conda env `square_assembly`, `projects/square_assembly/environment.yml` 참고 — ADR-001의
 "레포 단위 독립 가상환경" 원칙을 서브프로젝트 단위로 확장 적용).
 

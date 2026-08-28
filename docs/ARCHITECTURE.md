@@ -1,16 +1,16 @@
-# Architecture: Self-Improving EMFs Gym
+# Architecture: Self-Improving Gym
 
 이 문서는 본 프로젝트의 구조와 설계 의도를 담고 있습니다.
 
 ## 1. 프로젝트 개요
 
-Ghasemipour et al. 2025, *Self-Improving Embodied Foundation Models*(이하 SI-EFM)의 공식 pointmass 데모를 재현하고, 그 위에 환경 기능을 확장해 방법론의 경향을 분석하는 프로젝트입니다.
+Ghasemipour et al. 2025, *Self-Improving Embodied Foundation Models*(이하 SI-EFM)의 방법론(2절 참고)을 여러 매니퓰레이션 환경에서 검증하는 연구 모노레포입니다. 현재 `projects/` 아래 세 개의 병렬 트랙이 있습니다.
 
-- **1차 목표 — 클린 버전**: `references/self-improving-efms.github.io/`에서 홈페이지 관련 파일(html, css, js, 웹 assets)을 제거한 클린 버전을 구성한다. **원본 코드는 그대로 복사**하고 웹 파일만 삭제하는 방식을 따른다 (ADR-004).
-- **2차 목표 — 환경 확장 실험**: pointmass gym 환경에 아래 기능을 추가해 정책·steps-to-go 예측의 경향을 관찰한다. 상세 요구사항은 추후 별도 md로 제공된다.
-  1. 순간 변위(순간이동) 발생 기능
-  2. 바이어스(외력) 인가 기능
-  3. 직접 조종하며 steps-to-go 그래프를 관찰하는 기능
+- **pointmass** (`projects/pointmass/`) — 최초 트랙. SI-EFM 공식 pointmass 데모의 클린 재현(`references/self-improving-efms.github.io/`에서 웹 파일만 제거하고 **원본 코드는 그대로 복사**, ADR-004) + 순간이동/외력/장애물 등 환경 확장 실험(4절). 연구가 grasp_carry/square_assembly로 옮겨가며 현재는 휴면 상태 — 최소 골격(`pointmass_core.py`, `pointmass_notebook.ipynb`)만 유지하고 나머지 진단·실험 스크립트는 `archive/`로 보관했다.
+- **grasp_carry** (`projects/grasp_carry/`) — 은닉 물성(마찰·질량) 기반 파지·운반 환경 `GraspCarry2D` (ADR-006). pointmass 계열의 전관측·결정론적 한계(steps-to-go 분산이 기댓값의 재표현에 불과함이 실측으로 확인됨, `experiments/2026-07-21_sigma2-audit-and-partial-obs-redesign.md`)를 넘어서기 위해 부분관측 환경으로 설계했다.
+- **square_assembly** (`projects/square_assembly/`) — robomimic 벤치마크(square task) 위에서 Diffusion Policy를 학습하고 그 위에 DDPO self-improvement를 검증한다 (ADR-007).
+
+세 트랙 모두 2절의 SI-EFM 방법론(TIMER 네트워크의 steps-to-go 예측 + 자기 예측값 감소분을 reward로 쓰는 self-improvement)을 공통 출발점으로 삼되, 환경별로 관측 가능성·스택·정책 표현이 다르다. 각 트랙의 상세 구조·실행법은 해당 `projects/<name>/README.md` 참고.
 
 ## 2. 방법론 요약 (SI-EFM pointmass)
 
@@ -53,7 +53,7 @@ phases/                          # (레거시) 과거 phase의 step 정의·실�
                                   #   새 작업은 docs/superpowers/plans/*.md +
                                   #   <plan>.state.json을 쓴다 (harness 스킬 참고)
 projects/                        # 연구 프로젝트 폴더 모음
-  pointmass/                     #   1차 목표 산출물: 클린 버전 (원본 그대로 복사) —
+  pointmass/                     #   최초 트랙(휴면): 클린 버전 (원본 그대로 복사) —
                                   #     pointmass_core.py, pointmass_notebook.ipynb.
                                   #     archive/에 과거 진단·실험 스크립트(전부 pointmass_core
                                   #     파생) 보관. 구조는 projects/pointmass/README.md 참고.
@@ -67,17 +67,18 @@ projects/                        # 연구 프로젝트 폴더 모음
 
 > ⚠️ 위 트리는 conflict 해소 시점 기준으로, `docker/` 등 최근 추가된 최상위 디렉토리는 아직 반영하지 않았다(`archive/`는 정리 완료 — `projects/pointmass/archive/`, `projects/grasp_carry/archive/`로 흡수됨. 루트 `configs/`는 죽은 phase-2 설정 스냅샷이라 삭제됨).
 
-- 클린 버전은 레포 루트에 원본 파일명·내용 그대로 복사한다 (ADR-004).
-- 2차 목표의 확장 코드도 루트에 추가한다 (원본 노트북은 수정하지 않고 별도 파일로 — 4절 참조).
+- 클린 버전은 `projects/pointmass/`에 원본 파일명·내용 그대로 복사한다 (ADR-004).
+- pointmass 확장 코드도 같은 폴더에 추가한다 (원본 노트북은 수정하지 않고 별도 파일로 — 4절 참조).
 - 대용량 데이터셋·체크포인트는 git 추적 제외 대상이다(ADR-002). 로컬에 실물을 두는 대신 심볼릭 링크(`ln -s`)로 외부 경로(별도 스토리지 볼륨 등)와 연결하는 것을 권장한다.
 
-## 4. 확장 원칙 (2차 목표)
+## 4. pointmass 확장 원칙
 
 - **원본 비침습**: 복사된 원본 코드(노트북/모듈)는 수정하지 않는다. 확장 기능은 서브클래스·래퍼·별도 스크립트로 추가한다. 이유: 원본과의 수치 재현성 기준선을 항상 유지하기 위함.
 - 예: 순간이동/외력 기능은 `Point2D`를 상속한 확장 환경 클래스로, 수동 조종 관찰 기능은 별도 실행 스크립트로 구현한다.
 
 ## 5. 실행 환경
 
-- 스택: JAX / Haiku / optax / dm_env / TensorFlow(tf.data, tfp) — 원본 노트북 스택을 그대로 따른다 (ADR-003).
-- 가상환경은 레포 단위로 독립 구성한다 (ADR-001).
+- **pointmass / grasp_carry**: JAX / Haiku / optax / dm_env / TensorFlow(tf.data, tfp) — 원본 노트북 스택을 그대로 따른다 (ADR-003). 레포 루트 `requirements.txt`로 공유한다.
+- **square_assembly**: PyTorch / diffusers / robomimic / robosuite / mujoco — 별도 conda env (ADR-007).
+- 가상환경은 레포(또는 서브프로젝트) 단위로 독립 구성한다 (ADR-001).
 - 실제 하드웨어 구성(PC 대수, GPU 유무 등)은 `docs/private/ENVIRONMENT.md`(git 미추적, 로컬 전용) 참고.
