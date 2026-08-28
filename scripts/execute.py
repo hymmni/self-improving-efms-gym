@@ -180,8 +180,19 @@ class PlanExecutor:
         return subprocess.run(cmd, cwd=self._root, capture_output=True, text=True)
 
     def _checkout_branch(self):
-        # Task 5에서 플랜 파일명 기반 feature-name 브랜치 로직으로 다시 만든다.
-        raise NotImplementedError
+        branch = f"feat/{self._feature}"
+        r = self._run_git("rev-parse", "--abbrev-ref", "HEAD")
+        if r.returncode != 0:
+            print("  ERROR: git을 사용할 수 없거나 git repo가 아닙니다.")
+            sys.exit(1)
+        if r.stdout.strip() == branch:
+            return
+        r = self._run_git("rev-parse", "--verify", branch)
+        r = self._run_git("checkout", branch) if r.returncode == 0 else self._run_git("checkout", "-b", branch)
+        if r.returncode != 0:
+            print(f"  ERROR: 브랜치 '{branch}' checkout 실패.")
+            sys.exit(1)
+        print(f"  Branch: {branch}")
 
     def _current_head(self) -> Optional[str]:
         """현재 HEAD의 커밋 SHA. 커밋이 하나도 없으면 None."""
@@ -336,6 +347,186 @@ class PlanExecutor:
                     lines.append(f"- attempt {a['attempt']}: {a['status']} — {a.get('error_message', '')}")
         return "\n".join(lines)
 
+    # --- 헤더 & 검증 ---
+
+    def _print_header(self):
+        print(f"\n{'='*60}")
+        print(f"  Harness Plan Executor")
+        print(f"  Plan: {self._plan_path.name} | Tasks: {self._total}")
+        print(f"{'='*60}")
+
+    def _check_blockers(self, state: dict) -> None:
+        for t in reversed(state["tasks"]):
+            if t["status"] == "error":
+                print(f"\n  ✗ Task {t['task']} failed.")
+                print(f"  Error: {t.get('error_message', 'unknown')}")
+                print(f"  Fix and reset status to 'pending' to retry.")
+                sys.exit(1)
+            if t["status"] == "blocked":
+                print(f"\n  ⏸ Task {t['task']} blocked.")
+                print(f"  Reason: {t.get('blocked_reason', 'unknown')}")
+                print(f"  Resolve and reset status to 'pending' to retry.")
+                sys.exit(2)
+            if t["status"] != "pending":
+                break
+
+    # --- 실행 루프 ---
+
+    def _execute_single_task(self, task: dict, guardrails: str, state: dict) -> bool:
+        """단일 task 실행 (재시도 포함). 완료되면 True — 실패/차단이면 sys.exit."""
+        task_num, task_name = task["task"], task["name"]
+        prev_error = None
+        task_start_sha = self._current_head()
+        attempts: list = []
+
+        for attempt in range(1, self.MAX_RETRIES + 1):
+            current = load_or_create_state(self._plan_path, self._parsed)
+            task_context = self._build_task_context(current)
+            preamble = self._build_preamble(self._parsed["header"], guardrails, task_context, prev_error)
+
+            tag = f"Task {task_num}/{self._total}: {task_name}"
+            if attempt > 1:
+                tag += f" [retry {attempt}/{self.MAX_RETRIES}]"
+
+            with progress_indicator(tag) as pi:
+                self._invoke_claude(task, preamble)
+            elapsed = int(pi.elapsed)
+
+            current = load_or_create_state(self._plan_path, self._parsed)
+            entry = next(t for t in current["tasks"] if t["task"] == task_num)
+            status = entry.get("status", "pending")
+            ts = now_kst()
+
+            if status == "completed":
+                attempts.append({"attempt": attempt, "status": "completed"})
+                entry["completed_at"] = ts
+                entry["attempts"] = attempts
+                save_state(self._plan_path, current)
+                self._commit_task(task_num, task_name, task_start_sha, attempts)
+                print(f"  ✓ Task {task_num}: {task_name} [{elapsed}s]")
+                return True
+
+            if status == "blocked":
+                attempts.append({"attempt": attempt, "status": "blocked"})
+                entry["blocked_at"] = ts
+                entry["attempts"] = attempts
+                save_state(self._plan_path, current)
+                print(f"  ⏸ Task {task_num}: {task_name} blocked [{elapsed}s]")
+                print(f"    Reason: {entry.get('blocked_reason', '')}")
+                sys.exit(2)
+
+            err_msg = entry.get("error_message", "Task did not update status")
+            attempts.append({"attempt": attempt, "status": "error", "error_message": err_msg})
+
+            if attempt < self.MAX_RETRIES:
+                entry["status"] = "pending"
+                entry["attempts"] = attempts
+                save_state(self._plan_path, current)
+                prev_error = err_msg
+                print(f"  ↻ Task {task_num}: retry {attempt}/{self.MAX_RETRIES} — {err_msg}")
+            else:
+                entry["status"] = "error"
+                entry["error_message"] = f"[{self.MAX_RETRIES}회 시도 후 실패] {err_msg}"
+                entry["failed_at"] = ts
+                entry["attempts"] = attempts
+                save_state(self._plan_path, current)
+                self._commit_task(task_num, task_name, task_start_sha, attempts, failed=True)
+                print(f"  ✗ Task {task_num}: {task_name} failed after {self.MAX_RETRIES} attempts [{elapsed}s]")
+                print(f"    Error: {err_msg}")
+                sys.exit(1)
+
+        return False  # unreachable
+
+    def _execute_all_tasks(self, guardrails: str, checkpoint_every: Optional[int]) -> bool:
+        """모든 task가 끝났으면 True, checkpoint_every에 도달해 중간에 멈췄으면 False."""
+        completed_this_run = []
+        while True:
+            state = load_or_create_state(self._plan_path, self._parsed)
+            pending = next((t for t in state["tasks"] if t["status"] == "pending"), None)
+            if pending is None:
+                print("\n  All tasks completed!")
+                return True
+
+            task_num = pending["task"]
+            task = next(t for t in self._parsed["tasks"] if t["task"] == task_num)
+            if not pending.get("started_at"):
+                pending["started_at"] = now_kst()
+                save_state(self._plan_path, state)
+
+            self._execute_single_task(task, guardrails, state)
+            completed_this_run.append(task_num)
+
+            if checkpoint_every is not None and len(completed_this_run) >= checkpoint_every:
+                final_state = load_or_create_state(self._plan_path, self._parsed)
+                self._print_batch_summary(final_state, completed_this_run)
+                return False
+
+    def _print_batch_summary(self, state: dict, tasks_this_run: list) -> None:
+        print(f"\n{'='*60}")
+        print(f"  Checkpoint — {len(tasks_this_run)} task(s) completed this run")
+        for t in state["tasks"]:
+            if t["task"] not in tasks_this_run:
+                continue
+            print(f"  ✓ Task {t['task']} ({t['name']}): {t.get('summary', '')}")
+            if len(t.get("attempts", [])) > 1:
+                print(f"    (retried {len(t['attempts'])} attempts)")
+            print(f"    commit: {t.get('commit_subject', '')}")
+        print(f"  Review the diff/summary above, then re-run to continue:")
+        print(f"    python3 scripts/execute.py {self._plan_path}")
+        print(f"{'='*60}")
+
+    def run(self, checkpoint_every: Optional[int] = None):
+        self._print_header()
+        state = load_or_create_state(self._plan_path, self._parsed)
+        self._check_blockers(state)
+        self._checkout_branch()
+        guardrails = self._load_guardrails()
+        plan_done = self._execute_all_tasks(guardrails, checkpoint_every)
+        if plan_done:
+            self._finalize()
+
+    def _finalize(self):
+        state = load_or_create_state(self._plan_path, self._parsed)
+        state["completed_at"] = now_kst()
+        save_state(self._plan_path, state)
+
+        self._run_git("add", "-A")
+        if self._run_git("diff", "--cached", "--quiet").returncode != 0:
+            msg = f"chore(harness): mark plan '{self._plan_path.name}' completed"
+            body = f"- set completed_at in {state_path_for(self._plan_path).relative_to(Path(self._root))}"
+            r = self._run_git("commit", "-m", msg, "-m", body)
+            if r.returncode == 0:
+                print(f"  ✓ {msg}")
+
+        if self._auto_push:
+            branch = f"feat/{self._feature}"
+            r = self._run_git("push", "-u", "origin", branch)
+            if r.returncode != 0:
+                print(f"\n  ERROR: git push 실패: {r.stderr.strip()}")
+                sys.exit(1)
+            print(f"  ✓ Pushed to origin/{branch}")
+
+        print(f"\n{'='*60}\n  Plan '{self._plan_path.name}' completed!\n{'='*60}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Harness Plan Executor")
+    parser.add_argument("plan", help="Path to a writing-plans markdown plan (docs/superpowers/plans/*.md)")
+    parser.add_argument("--push", action="store_true")
+    parser.add_argument("--model", default="")
+    parser.add_argument("--checkpoint-every", type=int, default=None,
+                        help="N tasks per run before stopping for review (omit = run whole plan)")
+    args = parser.parse_args()
+
+    plan_path = Path(args.plan)
+    if not plan_path.is_absolute():
+        plan_path = ROOT / plan_path
+    if not plan_path.is_file():
+        print(f"ERROR: {plan_path} not found")
+        sys.exit(1)
+
+    PlanExecutor(plan_path, auto_push=args.push, model=args.model).run(checkpoint_every=args.checkpoint_every)
+
 
 if __name__ == "__main__":
-    pass
+    main()

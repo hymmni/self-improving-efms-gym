@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import types
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -463,3 +464,178 @@ class TestCommitTask:
         commit_call = next(c for c in calls if c[0] == "commit")
         body = commit_call[commit_call.index("-m") + 3]
         assert "Retries" not in body
+
+
+# ---------------------------------------------------------------------------
+# _check_blockers
+# ---------------------------------------------------------------------------
+
+class TestCheckBlockers:
+    def test_error_task_exits_1(self, plan_executor):
+        state = {"tasks": [{"task": 1, "status": "error", "error_message": "boom"}]}
+        with pytest.raises(SystemExit) as e:
+            plan_executor._check_blockers(state)
+        assert e.value.code == 1
+
+    def test_blocked_task_exits_2(self, plan_executor):
+        state = {"tasks": [{"task": 1, "status": "blocked", "blocked_reason": "need key"}]}
+        with pytest.raises(SystemExit) as e:
+            plan_executor._check_blockers(state)
+        assert e.value.code == 2
+
+    def test_all_completed_is_noop(self, plan_executor):
+        state = {"tasks": [{"task": 1, "status": "completed"}]}
+        plan_executor._check_blockers(state)  # 예외 없이 통과
+
+
+# ---------------------------------------------------------------------------
+# _execute_single_task
+# ---------------------------------------------------------------------------
+
+class TestExecuteSingleTask:
+    def _make_state(self):
+        return {
+            "plan_file": "foo.md", "created_at": "t", "completed_at": None,
+            "tasks": [{"task": 1, "name": "core", "status": "pending", "attempts": [],
+                       "started_at": None, "completed_at": None, "summary": None,
+                       "commit_subject": None, "error_message": None, "blocked_reason": None}],
+        }
+
+    def test_success_on_first_attempt_records_one_attempt(self, plan_executor, tmp_project):
+        state = self._make_state()
+        ex.save_state(plan_executor._plan_path, state)
+
+        def fake_invoke(task, preamble):
+            s = ex.load_or_create_state(plan_executor._plan_path, plan_executor._parsed)
+            s["tasks"][0]["status"] = "completed"
+            s["tasks"][0]["summary"] = "done"
+            ex.save_state(plan_executor._plan_path, s)
+            return {"exitCode": 0}
+        plan_executor._invoke_claude = fake_invoke
+        plan_executor._commit_task = MagicMock()
+        plan_executor._current_head = MagicMock(return_value="sha0")
+
+        with patch.object(ex, "progress_indicator") as pi_cm:
+            pi_cm.return_value.__enter__.return_value = types.SimpleNamespace(elapsed=1.0)
+            result = plan_executor._execute_single_task({"task": 1, "name": "core", "raw": "x"}, "", state)
+
+        assert result is True
+        final = ex.load_or_create_state(plan_executor._plan_path, plan_executor._parsed)
+        assert len(final["tasks"][0]["attempts"]) == 1
+        assert final["tasks"][0]["attempts"][0]["status"] == "completed"
+
+    def test_retries_up_to_max_then_marks_error(self, plan_executor):
+        state = self._make_state()
+        ex.save_state(plan_executor._plan_path, state)
+
+        def fake_invoke(task, preamble):
+            s = ex.load_or_create_state(plan_executor._plan_path, plan_executor._parsed)
+            s["tasks"][0]["status"] = "error"
+            s["tasks"][0]["error_message"] = "AC failed"
+            ex.save_state(plan_executor._plan_path, s)
+            return {"exitCode": 0}
+        plan_executor._invoke_claude = fake_invoke
+        plan_executor._commit_task = MagicMock()
+        plan_executor._current_head = MagicMock(return_value="sha0")
+
+        with patch.object(ex, "progress_indicator") as pi_cm:
+            pi_cm.return_value.__enter__.return_value = types.SimpleNamespace(elapsed=1.0)
+            with pytest.raises(SystemExit) as e:
+                plan_executor._execute_single_task({"task": 1, "name": "core", "raw": "x"}, "", state)
+
+        assert e.value.code == 1
+        final = ex.load_or_create_state(plan_executor._plan_path, plan_executor._parsed)
+        assert len(final["tasks"][0]["attempts"]) == 3
+        assert final["tasks"][0]["status"] == "error"
+        plan_executor._commit_task.assert_called_once()
+        assert plan_executor._commit_task.call_args.kwargs.get("failed") is True
+
+
+# ---------------------------------------------------------------------------
+# _execute_all_tasks (checkpoint batching)
+# ---------------------------------------------------------------------------
+
+class TestExecuteAllTasks:
+    def test_runs_until_no_checkpoint_limit(self, plan_executor):
+        plan_executor._parsed = {"header": "", "tasks": [
+            {"task": 1, "name": "a", "raw": "x"}, {"task": 2, "name": "b", "raw": "y"},
+        ]}
+        plan_executor._total = 2
+        calls = []
+        def fake_single(task, guardrails, state):
+            calls.append(task["task"])
+            s = ex.load_or_create_state(plan_executor._plan_path, plan_executor._parsed)
+            for t in s["tasks"]:
+                if t["task"] == task["task"]:
+                    t["status"] = "completed"
+            ex.save_state(plan_executor._plan_path, s)
+            return True
+        plan_executor._execute_single_task = fake_single
+        done = plan_executor._execute_all_tasks(guardrails="", checkpoint_every=None)
+        assert done is True
+        assert calls == [1, 2]
+
+    def test_stops_after_checkpoint_every(self, plan_executor):
+        plan_executor._parsed = {"header": "", "tasks": [
+            {"task": 1, "name": "a", "raw": "x"}, {"task": 2, "name": "b", "raw": "y"},
+            {"task": 3, "name": "c", "raw": "z"},
+        ]}
+        plan_executor._total = 3
+        calls = []
+        def fake_single(task, guardrails, state):
+            calls.append(task["task"])
+            s = ex.load_or_create_state(plan_executor._plan_path, plan_executor._parsed)
+            for t in s["tasks"]:
+                if t["task"] == task["task"]:
+                    t["status"] = "completed"
+            ex.save_state(plan_executor._plan_path, s)
+            return True
+        plan_executor._execute_single_task = fake_single
+        plan_executor._print_batch_summary = MagicMock()
+        done = plan_executor._execute_all_tasks(guardrails="", checkpoint_every=2)
+        assert done is False
+        assert calls == [1, 2]
+        plan_executor._print_batch_summary.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# run() / _finalize() / main()
+# ---------------------------------------------------------------------------
+
+class TestRunAndFinalize:
+    def test_finalize_writes_completed_at_and_commits(self, plan_executor):
+        state = {"plan_file": "foo.md", "created_at": "t", "completed_at": None, "tasks": []}
+        ex.save_state(plan_executor._plan_path, state)
+        calls = []
+        def fake_git(*args):
+            calls.append(args)
+            if args[:2] == ("diff", "--cached"):
+                return MagicMock(returncode=1)
+            return MagicMock(returncode=0, stdout="", stderr="")
+        plan_executor._run_git = fake_git
+        plan_executor._finalize()
+        final = ex.load_or_create_state(plan_executor._plan_path, plan_executor._parsed)
+        assert final["completed_at"] is not None
+        assert any(c[0] == "commit" for c in calls)
+
+
+class TestMainCli:
+    def test_no_args_exits(self):
+        with patch("sys.argv", ["execute.py"]):
+            with pytest.raises(SystemExit):
+                ex.main()
+
+    def test_nonexistent_plan_exits(self, tmp_path):
+        with patch("sys.argv", ["execute.py", str(tmp_path / "nope.md")]):
+            with pytest.raises(SystemExit):
+                ex.main()
+
+    def test_checkpoint_every_parsed_as_int(self, tmp_project):
+        plan = tmp_project / "docs" / "superpowers" / "plans" / "foo.md"
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# P\n\n### Task 1: A\n\nbody\n")
+        with patch.object(ex, "ROOT", tmp_project), \
+             patch("sys.argv", ["execute.py", str(plan), "--checkpoint-every", "3"]), \
+             patch.object(ex.PlanExecutor, "run") as mock_run:
+            ex.main()
+        mock_run.assert_called_once()
