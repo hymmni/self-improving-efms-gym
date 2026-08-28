@@ -162,7 +162,7 @@ pytest tests/test_env_enhanced.py -v
 ## 5. 하네스/워크플로우 유틸 (상세는 CLAUDE.md)
 
 ```bash
-python scripts/execute.py <phase_dir> [--model MODEL]   # phase step 자동 실행
+python scripts/execute.py <plan.md> [--model MODEL] [--checkpoint-every N] [--push]   # 플랜 task 자동 실행
 python scripts/merge_to_main.py <feat-branch> [--push]  # main 병합 (직접 git merge 금지)
 python scripts/tmux_autoresume.py                       # 리밋 자동 재개 tmux 세션
 ```

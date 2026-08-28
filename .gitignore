@@ -7,7 +7,9 @@ __pycache__/
 # .claude/skills/ 도 마찬가지로 예외 — worktrees/ 등 나머지 .claude/ 하위는 그대로 미추적.
 .claude/*
 !.claude/skills/
-docs/
+# docs/ARCHITECTURE.md, docs/ADR.md, docs/README.md는 추적 대상(docs/README.md 참고).
+# docs/private/만 로컬 전용(이 레포는 public이라 인프라 정보는 여기 남기지 않는다).
+docs/private/
 experiments/
 phases/
 references/
