@@ -2,17 +2,21 @@
 __pycache__/
 *.py[cod]
 
-# Harness — git은 gym 환경 코드만 추적한다 (harness 파일은 로컬 전용)
-# scripts/ 는 하네스 실행기 자체(execute.py 등)라 예외적으로 추적한다.
-# .claude/skills/ 도 마찬가지로 예외 — worktrees/ 등 나머지 .claude/ 하위는 그대로 미추적.
-.claude/*
-!.claude/skills/
-# docs/ARCHITECTURE.md, docs/ADR.md, docs/README.md는 추적 대상(docs/README.md 참고).
-# docs/private/만 로컬 전용(이 레포는 public이라 인프라 정보는 여기 남기지 않는다).
-docs/private/
-experiments/
-phases/
-references/
+# Docker 환경변수 (WandB API 키 등)
+.env
+
+# Harness — CLAUDE.md, docs/(private/ 제외), scripts/, .claude/skills/는 git 추적,
+# 나머지 하네스 파일은 로컬 전용.
+# 앞에 '/'를 붙여 레포 루트에만 적용시킨다 — 앵커 없이 'docs/'처럼 두면 square_assembly/docs/,
+# square_assembly/src/square_assembly/scripts/ 같은 서브프로젝트 내부의 같은 이름 디렉토리까지 전부
+# 무시돼버린다(square_assembly 통합 때 실제로 발견됨: square_assembly의 scripts/train.py가 이 규칙 때문에
+# 조용히 추적 안 될 뻔했다).
+/.claude/*
+!/.claude/skills/
+/docs/private/
+/experiments/
+/phases/
+/references/
 continuation_plan.md
 
 # 대용량 데이터/체크포인트 (ADR-002)
@@ -31,14 +35,3 @@ outputs/
 
 # 데모 데이터셋 (재생성 가능, ADR-002)
 data/
-
-# phase 2/3 실험 산출물 (플롯/CSV/영상, 재생성 가능) — 단 summary류 md는 추적
-results/*
-!results/summary.md
-!results/diag_multimodal/
-results/diag_multimodal/*
-!results/diag_multimodal/summary.md
-!results/diag_multimodal/mu_sigma_relationship.md
-!results/obstacle_env/
-results/obstacle_env/*
-!results/obstacle_env/summary.md

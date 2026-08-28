@@ -1,0 +1,10 @@
+# 실험 산출물 (플롯/CSV/영상, 재생성 가능) — 단 summary류 md는 추적 (루트 .gitignore에서 이관)
+results/*
+!results/summary.md
+!results/diag_multimodal/
+results/diag_multimodal/*
+!results/diag_multimodal/summary.md
+!results/diag_multimodal/mu_sigma_relationship.md
+!results/obstacle_env/
+results/obstacle_env/*
+!results/obstacle_env/summary.md

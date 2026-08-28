@@ -1,0 +1,20 @@
+# 데이터·산출물 (git 밖 — docs/plan.md 원칙 5)
+data/
+outputs/
+wandb/
+results/
+
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# 환경
+.venv/
+
+# 재생성되는 로그/스크래치 파일 (2026-07-19 정리 완료 — 옛 sweep 스크립트·LIBERO 탐색 잔재는
+# 삭제함, 결과는 EXP-01.md에 이미 기록돼 있어 유실 없음)
+MUJOCO_LOG.TXT
+pip_install*.log
+scratchpad_start.txt

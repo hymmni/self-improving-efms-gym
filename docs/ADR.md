@@ -41,12 +41,12 @@
 **트레이드오프**: pymunk 물리 의존성이 추가되고, 원본 JAX 스택(ADR-003)과
 프로세스가 분리된다(환경=pymunk, 학습=JAX).
 
-### ADR-007: `mani_sim/` — PyTorch/robomimic 스택을 별도 서브프로젝트로 공존
+### ADR-007: `square_assembly/` — PyTorch/robomimic 스택을 별도 서브프로젝트로 공존
 **결정**: robomimic 벤치마크(square task) 위에서 Diffusion Policy를 학습·평가하는
 외부 레포(`github.com/Leejw221/manipulation_simulator`)를 `.git`을 제거하고
-레포 루트의 `mani_sim/` 서브디렉토리로 통합한다. ADR-003이 고정한 JAX/Haiku 스택과
-별개로, `mani_sim/`은 PyTorch/diffusers/robomimic/robosuite/mujoco 스택을 그대로
-쓴다(독립 conda env `mani_sim`, `mani_sim/environment.yml` 참고 — ADR-001의
+레포의 `projects/square_assembly/` 서브디렉토리로 통합한다. ADR-003이 고정한 JAX/Haiku 스택과
+별개로, `projects/square_assembly/`은 PyTorch/diffusers/robomimic/robosuite/mujoco 스택을 그대로
+쓴다(독립 conda env `square_assembly`, `projects/square_assembly/environment.yml` 참고 — ADR-001의
 "레포 단위 독립 가상환경" 원칙을 서브프로젝트 단위로 확장 적용).
 
 **통합 범위 축소**: 원본 레포(~80파일, 10,645줄)는 diffusion policy 외에도
@@ -54,7 +54,7 @@ OpenVLA 학습/추론, SIRIUS/APO 가중치 연구, PICO VR 원격조작, 실물
 SARM 보상모델을 포함한다. 이 프로젝트가 필요로 하는 건 "square task를 학습하는
 diffusion policy + 그 위에 DDPO self-improvement를 얹을 수 있는 최소 인프라"뿐이라,
 diffusion policy·robomimic 데이터셋/env 어댑터·학습 러너만 가져왔다(정확한 목록은
-`mani_sim/src/mani_sim/factory.py`·`envs/robomimic/factory.py`의 통합 시 축소 주석
+`projects/square_assembly/src/square_assembly/factory.py`·`envs/robomimic/factory.py`의 통합 시 축소 주석
 참고). 나머지는 원본 레포에서 필요할 때 추가로 가져올 수 있다.
 
 **이유**: (1) 이 통합의 목적(DDPO/REINFORCE self-improvement)에는 이미 학습된
@@ -64,15 +64,15 @@ Policy를 JAX로 다시 포팅하는 대신 PyTorch 구현을 그대로 쓰는 �
 동일성(원본 체크포인트를 그대로 불러와 파인튜닝 가능)을 보장한다 — ADR-004의
 "원본 그대로" 정신을 여기에도 적용한 것.
 
-**트레이드오프**: 레포 안에 JAX(gym 본체)와 PyTorch(`mani_sim/`) 두 스택이
+**트레이드오프**: 레포 안에 JAX(gym 본체)와 PyTorch(`projects/square_assembly/`) 두 스택이
 공존한다 — 서로 import하지 않고 완전히 분리된 프로세스로 실행된다(GraspCarry2D가
-env=pymunk/학습=JAX로 이미 분리했던 것과 같은 패턴, ADR-006 참고). `mani_sim/`
+env=pymunk/학습=JAX로 이미 분리했던 것과 같은 패턴, ADR-006 참고). `projects/square_assembly/`
 내부 코드는 원본 레포의 구조·관례(hydra config, factory registry)를 그대로
 따르며, ADR-004(원본 복사)·ADR-005(비침습 확장)를 준용해 가져온 파일은 원본
 그대로 두고 DDPO 관련 확장은 새 파일로 추가한다. 단, registry 진입점
 (`factory.py`, `envs/robomimic/factory.py`)은 가져오지 않은 모듈에 대한 import만
 제거했다 — 이 두 곳은 예외적으로 트림 사실을 코드 주석에 명시했다.
 
-**미해결**: 실제 conda env(`mani_sim`) 설치(torch+cuda/robosuite/mujoco/robomimic
+**미해결**: 실제 conda env(`square_assembly`) 설치(torch+cuda/robosuite/mujoco/robomimic
 v0.4.0)는 아직 하지 않았다 — 무거운 설치라 별도로 진행 여부를 확인한다. 학습
 체크포인트는 통합 시점에 없고 추후 별도로 전달받는다.

@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grasp_carry"
+version = "0.1.0"
+description = "GraspCarry2D — hidden-property-conditioned pick-and-carry environment and JAX/Haiku training stack"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]

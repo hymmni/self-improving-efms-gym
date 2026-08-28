@@ -1,0 +1,67 @@
+defaults:
+  - task: square
+  - policy: diffusion_unet
+  - _self_
+
+policy_name: diffusion
+
+checkpoint_path: ???
+# true(기본)면 checkpoint_path 옆의 run_config.yaml(학습 시 자동 저장, 2026-07-25)에서
+# task/policy/policy_name을 읽어 위 defaults를 덮어쓴다 — 학습·추론 설정이 사람 실수로
+# 어긋나는 걸(예: transport 체크포인트를 task=square로 잘못 평가) 구조적으로 막는다.
+# 옛 체크포인트(run_config.yaml 없음)나 openvla는 자동으로 건너뛰고 위 CLI 값을 그대로 씀.
+use_run_config: true
+num_episodes: 50
+# round.yaml의 eval.max_steps=1000과 맞춤(2026-07-29) - 300은 Transport 성공 에피소드
+# 평균 길이(466, 범위 382~780)보다 짧아 완료 직전에 타임아웃 처리되는 문제가 있었음
+# (train.yaml의 eval_max_steps 주석·EXP-10.md 참고).
+max_steps: 1000
+render: false
+device: cuda
+# render=true + image task일 때만 적용(성공률 측정용 render=false 호출은 이 값과 무관하게
+# 학습 스케줄러 그대로 - collect.yaml의 동일 이름 필드와 같은 메커니즘, runners/rollout.py의
+# maybe_speed_up_inference 참고, 2026-07-27). null이면 안 바꿈(DDPM 그대로, 끊길 수 있음).
+deploy_num_inference_steps: 10
+# true면 8스텝(action_horizon) 열린 루프 재생 대신 moai_policy 스타일 매 스텝 재계획
+# (collect.py 배포와 동일한 async_infer 경로, runners/rollout.py의 rollout_policy_async
+# 참고, 2026-07-28)으로 성공률을 측정한다. render=true/false 둘 다와 무관하게 독립적으로
+# 적용됨(render는 화면 표시 여부, async_infer는 재계획 방식 - 서로 다른 축).
+# ⚠ 이 값을 바꾸면 기존에 async_infer=false로 측정해둔 수치(EXP-10 등)와 직접 비교 불가 -
+# 같은 조건끼리만 비교할 것.
+async_infer: false
+merger_name: overwrite  # collect.yaml과 동일 - async_infer=true일 때만 의미 있음
+te_coeff: 0.01
+control_fps: 20  # render=true + async_infer=true일 때만 실시간 페이싱에 사용(collect.yaml과 동일 개념)
+# 추론 결과(metrics.json) 저장 폴더. null(기본)이면 eval.py가 checkpoint_path 옆에
+# eval_results/<추론 시각>/으로 자동 생성(moai_policy 컨벤션 — 어느 체크포인트를 평가한
+# 결과인지 폴더 위치만으로 바로 알 수 있음). 명시적으로 주면 그 경로를 그대로 씀.
+output_dir: null
+# 지정하면 rollout 직전 np.random.seed(eval_seed) 호출 — 너트 초기 위치 시퀀스를 고정해서
+# 서로 다른 체크포인트를 "같은 200개 시나리오"로 평가(공정 비교, 어려운 배치 쏠림 방지).
+eval_seed: null
+# 지정 안 하면 dirname(checkpoint_path)/normalization_stats.json로 추정(DP 저장 관례).
+# policy_name=openvla는 checkpoint_path가 {output_dir}/lora_final/policy라 dirname이
+# 한 단계 더 깊음(stats는 {output_dir}/normalization_stats.json) — 이 경우 명시 필수.
+stats_path: null
+# policy_name=openvla 전용
+openvla_instruction: null  # null이면 datasets/openvla_dataset.SQUARE_INSTRUCTION 사용
+save_gif: null  # 지정하면 첫 에피소드의 agentview 프레임을 GIF로 저장(cv2 라이브 뷰어
+# 대안 — 2026-07-19, 이 PC 터미널에서 cv2.namedWindow가 원인 불명으로 멈추는 문제 회피용)
+# stage-as-input 강건성 체크 전용(2026-07-22, use_online_stage_tracker=true task에서만 유효).
+# stage_shift_target=null이면 평소처럼 정상 online tracker. 정수(stage index)를 주면 그
+# stage에 진입한 뒤 처음 stage_shift_window 프레임 동안 stage+1(clamp)을 대신 주입.
+stage_shift_target: null
+stage_shift_window: 20
+
+# wandb 로깅(옵션, 기본 꺼짐, 2026-08-07) — 켜면 새 run을 만들지 않고 이 체크포인트를 만든
+# 학습의 wandb run을 이름으로 찾아 **이어서**(resume) eval/success_rate 등을 기록한다.
+# wandb_run_name은 학습 시 준 wandb_run_name과 정확히 같아야 한다(프로젝트 안에서 display
+# name으로 검색). 못 찾으면 에러 없이 경고만 찍고 건너뜀 — eval 자체(metrics.json 등 기존
+# 저장)는 wandb 연동 실패와 무관하게 항상 정상 진행된다.
+use_wandb: false
+wandb_project: Diffusion-APO
+wandb_run_name: null
+# true(기본)면 rollout 영상 1개(별도 에피소드, 통계 집계와 분리 - 메인 eval 속도에 영향
+# 없음)도 같이 올린다. policy_name=openvla는 아직 미지원(필요해지면 추가).
+wandb_log_video: true
+wandb_video_max_frames: 300

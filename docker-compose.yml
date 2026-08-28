@@ -1,0 +1,16 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: self-improving-gym/dev:latest
+    working_dir: /workspace/projects/grasp_carry
+    volumes:
+      - .:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - WANDB_API_KEY=${WANDB_API_KEY}
+      - MUJOCO_GL=egl
+    stdin_open: true
+    tty: true
