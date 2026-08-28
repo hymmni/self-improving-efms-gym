@@ -37,7 +37,6 @@ graph LR
 **git은 gym 환경 코드 + 하네스 정책 문서(`CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/ADR.md`)를 추적한다.** 이 레포는 public이므로, PC/GPU 구성처럼 로컬 인프라에 관한 내용은 `docs/private/`에 두고 `.gitignore`로 제외한다. 그 외 하네스 파일(`.claude/`, `scripts/`, `experiments/`, `phases/`, `references/`)도 로컬 전용이다. 작업 코드는 harness 파일이 없다고 생각하고 **레포 루트**에 배치한다.
 
 ```
-pointmass_notebook.ipynb         # 1차 목표 산출물: 클린 버전 (원본 그대로 루트에 복사)
 requirements.txt (또는 environment.yml)  # 실행 환경 정의
 .gitignore                       # (추적됨)
 CLAUDE.md                        # (추적됨) 작업 규칙
@@ -50,6 +49,11 @@ references/                      # 원본 참조 (읽기 전용, 수정 금지)
 experiments/                     # 실험 기록
 scripts/                         # 하네스 실행기
 phases/                          # step 정의·실행 기록
+pointmass/                       # 1차 목표 산출물: 클린 버전 (원본 그대로 복사) —
+                                  #   pointmass_core.py, pointmass_notebook.ipynb
+grasp_carry/                     # 은닉 물성 기반 파지·운반 서브프로젝트 (ADR-006) —
+                                  #   JAX/Haiku 스택(ADR-003과 공유). src/grasp_carry/
+                                  #   구조는 grasp_carry/README.md 참고.
 square_assembly/                 # robomimic/Diffusion Policy 서브프로젝트 (ADR-007) —
                                   #   별도 스택(PyTorch), 별도 conda env. src/square_assembly/
                                   #   구조·환경설정은 square_assembly/README.md 참고.

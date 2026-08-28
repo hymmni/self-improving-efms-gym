@@ -18,3 +18,8 @@ square_assembly/results/
 square_assembly/data/
 square_assembly/.pytest_cache/
 square_assembly/src/square_assembly.egg-info/
+
+grasp_carry/data/
+grasp_carry/checkpoints/
+grasp_carry/outputs/
+grasp_carry/results/
