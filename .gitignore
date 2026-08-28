@@ -3,9 +3,9 @@ __pycache__/
 *.py[cod]
 
 # Harness — git은 gym 환경 코드만 추적한다 (harness 파일은 로컬 전용)
+# scripts/ 는 하네스 실행기 자체(execute.py 등)라 예외적으로 추적한다.
 .claude/
 docs/
-scripts/
 experiments/
 phases/
 references/
