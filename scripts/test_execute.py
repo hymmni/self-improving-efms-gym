@@ -44,9 +44,9 @@ def tmp_project(tmp_path):
 
 @pytest.fixture
 def executor(tmp_project):
-    """테스트용 StepExecutor 인스턴스. git 호출은 별도 mock 필요."""
+    """테스트용 PlanExecutor 인스턴스. git 호출은 별도 mock 필요."""
     with patch.object(ex, "ROOT", tmp_project):
-        inst = ex.StepExecutor.__new__(ex.StepExecutor)
+        inst = ex.PlanExecutor.__new__(ex.PlanExecutor)
     inst._root = str(tmp_project)
     return inst
 
@@ -66,9 +66,9 @@ class TestStamp:
         assert dt.tzinfo is not None
 
     def test_is_current_time(self, executor):
-        before = datetime.now(ex.StepExecutor.TZ).replace(microsecond=0)
+        before = datetime.now(ex.PlanExecutor.TZ).replace(microsecond=0)
         result = executor._stamp()
-        after = datetime.now(ex.StepExecutor.TZ).replace(microsecond=0) + timedelta(seconds=1)
+        after = datetime.now(ex.PlanExecutor.TZ).replace(microsecond=0) + timedelta(seconds=1)
         parsed = datetime.strptime(result, "%Y-%m-%dT%H:%M:%S%z")
         assert before <= parsed <= after
 
@@ -81,26 +81,26 @@ class TestJsonHelpers:
     def test_roundtrip(self, tmp_path):
         data = {"key": "값", "nested": [1, 2, 3]}
         p = tmp_path / "test.json"
-        ex.StepExecutor._write_json(p, data)
-        loaded = ex.StepExecutor._read_json(p)
+        ex.PlanExecutor._write_json(p, data)
+        loaded = ex.PlanExecutor._read_json(p)
         assert loaded == data
 
     def test_save_ensures_ascii_false(self, tmp_path):
         p = tmp_path / "test.json"
-        ex.StepExecutor._write_json(p, {"한글": "테스트"})
+        ex.PlanExecutor._write_json(p, {"한글": "테스트"})
         raw = p.read_text()
         assert "한글" in raw
         assert "\\u" not in raw
 
     def test_save_indented(self, tmp_path):
         p = tmp_path / "test.json"
-        ex.StepExecutor._write_json(p, {"a": 1})
+        ex.PlanExecutor._write_json(p, {"a": 1})
         raw = p.read_text()
         assert "\n" in raw
 
     def test_load_nonexistent_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):
-            ex.StepExecutor._read_json(tmp_path / "nope.json")
+            ex.PlanExecutor._read_json(tmp_path / "nope.json")
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +151,7 @@ class TestLoadGuardrails:
 
     def test_empty_project(self, tmp_path):
         with patch.object(ex, "ROOT", tmp_path):
-            inst = ex.StepExecutor.__new__(ex.StepExecutor)
+            inst = ex.PlanExecutor.__new__(ex.PlanExecutor)
             result = inst._load_guardrails()
         assert result == ""
 
@@ -281,3 +281,185 @@ class TestPlanState:
         ex.save_state(plan, state)
         raw = json.loads(ex.state_path_for(plan).read_text())
         assert raw["completed_at"] == "2026-08-27T00:00:00+0900"
+
+
+# ---------------------------------------------------------------------------
+# _build_task_context
+# ---------------------------------------------------------------------------
+
+class TestBuildTaskContext:
+    def test_includes_completed_with_summary(self):
+        state = {"tasks": [
+            {"task": 1, "name": "setup", "status": "completed", "summary": "did setup"},
+            {"task": 2, "name": "core", "status": "pending", "summary": None},
+        ]}
+        result = ex.PlanExecutor._build_task_context(state)
+        assert "Task 1 (setup): did setup" in result
+        assert "core" not in result
+
+    def test_empty_when_no_completed(self):
+        state = {"tasks": [{"task": 1, "name": "a", "status": "pending", "summary": None}]}
+        assert ex.PlanExecutor._build_task_context(state) == ""
+
+    def test_has_header(self):
+        state = {"tasks": [{"task": 1, "name": "a", "status": "completed", "summary": "s"}]}
+        assert "이전 Task 산출물" in ex.PlanExecutor._build_task_context(state)
+
+
+# ---------------------------------------------------------------------------
+# PlanExecutor fixture (Task 4~)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def plan_executor(tmp_project):
+    plan_path = tmp_project / "docs" / "superpowers" / "plans" / "foo.md"
+    plan_path.parent.mkdir(parents=True)
+    plan_path.write_text("# P\n\n### Task 1: Core\n\nbody\n")
+    with patch.object(ex, "ROOT", tmp_project):
+        inst = ex.PlanExecutor(plan_path)
+    inst._root = str(tmp_project)
+    return inst
+
+
+# ---------------------------------------------------------------------------
+# _build_preamble
+# ---------------------------------------------------------------------------
+
+class TestBuildPreamble:
+    def test_includes_guardrails(self, plan_executor):
+        result = plan_executor._build_preamble("# P", "GUARDRAIL_TEXT", "")
+        assert "GUARDRAIL_TEXT" in result
+
+    def test_includes_plan_header(self, plan_executor):
+        result = plan_executor._build_preamble("PLAN_HEADER_TEXT", "", "")
+        assert "PLAN_HEADER_TEXT" in result
+
+    def test_includes_task_context(self, plan_executor):
+        result = plan_executor._build_preamble("", "", "TASK_CTX_TEXT")
+        assert "TASK_CTX_TEXT" in result
+
+    def test_no_retry_section_by_default(self, plan_executor):
+        result = plan_executor._build_preamble("", "", "")
+        assert "이전 시도 실패" not in result
+
+    def test_retry_section_with_prev_error(self, plan_executor):
+        result = plan_executor._build_preamble("", "", "", prev_error="boom")
+        assert "boom" in result
+        assert "이전 시도 실패" in result
+
+    def test_references_state_file_not_index_json(self, plan_executor):
+        result = plan_executor._build_preamble("", "", "")
+        assert "index.json" not in result
+        assert ".state.json" in result
+
+
+# ---------------------------------------------------------------------------
+# _invoke_claude
+# ---------------------------------------------------------------------------
+
+class TestInvokeClaude:
+    def test_uses_task_raw_not_a_file(self, plan_executor):
+        task = {"task": 1, "name": "core", "raw": "### Task 1: Core\n\nUNIQUE_MARKER\n"}
+        mock_result = MagicMock(returncode=0, stdout="{}", stderr="")
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            plan_executor._invoke_claude(task, preamble="PREAMBLE_TEXT")
+        prompt = mock_run.call_args[0][0][-1]
+        assert "UNIQUE_MARKER" in prompt
+        assert "PREAMBLE_TEXT" in prompt
+
+    def test_saves_output_json_named_by_task(self, plan_executor, tmp_project):
+        task = {"task": 3, "name": "core", "raw": "x"}
+        mock_result = MagicMock(returncode=0, stdout='{"ok": true}', stderr="")
+        with patch("subprocess.run", return_value=mock_result):
+            plan_executor._invoke_claude(task, preamble="p")
+        out = plan_executor._plan_path.parent / f"{plan_executor._plan_path.stem}.task3.output.json"
+        assert out.exists()
+
+    def test_timeout_is_1800(self, plan_executor):
+        mock_result = MagicMock(returncode=0, stdout="{}", stderr="")
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            plan_executor._invoke_claude({"task": 1, "name": "a", "raw": "x"}, preamble="p")
+        assert mock_run.call_args[1]["timeout"] == 1800
+
+
+# ---------------------------------------------------------------------------
+# _commit_task (squash + retry history)
+# ---------------------------------------------------------------------------
+
+class TestCommitTask:
+    def test_squashes_into_single_commit(self, plan_executor):
+        calls = []
+        def fake_git(*args):
+            calls.append(args)
+            if args[:2] == ("log", "--reverse"):
+                return MagicMock(returncode=0, stdout="wip: a\nfix: b\n", stderr="")
+            if args[:2] == ("diff", "--cached"):
+                return MagicMock(returncode=1)
+            return MagicMock(returncode=0, stdout="", stderr="")
+        plan_executor._run_git = fake_git
+        plan_executor._commit_task(1, "core", "abc123", attempts=[
+            {"attempt": 1, "status": "completed"},
+        ])
+        commit_call = next(c for c in calls if c[0] == "commit")
+        assert "feat(" in commit_call[commit_call.index("-m") + 1]
+
+    def test_no_changes_skips_commit(self, plan_executor):
+        def fake_git(*args):
+            if args[:2] == ("diff", "--cached"):
+                return MagicMock(returncode=0)  # 변경 없음
+            return MagicMock(returncode=0, stdout="", stderr="")
+        plan_executor._run_git = fake_git
+        plan_executor._commit_task(1, "core", "abc123", attempts=[{"attempt": 1, "status": "completed"}])
+
+    def test_failed_task_uses_wip_not_feat(self, plan_executor):
+        calls = []
+        def fake_git(*args):
+            calls.append(args)
+            if args[:2] == ("log", "--reverse"):
+                return MagicMock(returncode=0, stdout="wip: attempt\n", stderr="")
+            if args[:2] == ("diff", "--cached"):
+                return MagicMock(returncode=1)
+            return MagicMock(returncode=0, stdout="", stderr="")
+        plan_executor._run_git = fake_git
+        plan_executor._commit_task(1, "core", "abc123", attempts=[
+            {"attempt": 1, "status": "error", "error_message": "boom"},
+            {"attempt": 2, "status": "error", "error_message": "boom2"},
+            {"attempt": 3, "status": "error", "error_message": "boom3"},
+        ], failed=True)
+        commit_call = next(c for c in calls if c[0] == "commit")
+        assert "wip(" in commit_call[commit_call.index("-m") + 1]
+        assert "(FAILED)" in commit_call[commit_call.index("-m") + 1]
+
+    def test_retry_history_in_body_when_multiple_attempts(self, plan_executor):
+        calls = []
+        def fake_git(*args):
+            calls.append(args)
+            if args[:2] == ("log", "--reverse"):
+                return MagicMock(returncode=0, stdout="wip: a\n", stderr="")
+            if args[:2] == ("diff", "--cached"):
+                return MagicMock(returncode=1)
+            return MagicMock(returncode=0, stdout="", stderr="")
+        plan_executor._run_git = fake_git
+        plan_executor._commit_task(1, "core", "abc123", attempts=[
+            {"attempt": 1, "status": "error", "error_message": "ImportError: X"},
+            {"attempt": 2, "status": "completed"},
+        ])
+        commit_call = next(c for c in calls if c[0] == "commit")
+        body = commit_call[commit_call.index("-m") + 3]
+        assert "ImportError: X" in body
+        assert "attempt 1" in body and "attempt 2" in body
+
+    def test_no_retry_section_for_single_attempt(self, plan_executor):
+        calls = []
+        def fake_git(*args):
+            calls.append(args)
+            if args[:2] == ("log", "--reverse"):
+                return MagicMock(returncode=0, stdout="wip: a\n", stderr="")
+            if args[:2] == ("diff", "--cached"):
+                return MagicMock(returncode=1)
+            return MagicMock(returncode=0, stdout="", stderr="")
+        plan_executor._run_git = fake_git
+        plan_executor._commit_task(1, "core", "abc123", attempts=[{"attempt": 1, "status": "completed"}])
+        commit_call = next(c for c in calls if c[0] == "commit")
+        body = commit_call[commit_call.index("-m") + 3]
+        assert "Retries" not in body
