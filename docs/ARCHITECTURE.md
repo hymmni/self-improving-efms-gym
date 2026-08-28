@@ -49,14 +49,15 @@ references/                      # 원본 참조 (읽기 전용, 수정 금지)
 experiments/                     # 실험 기록
 scripts/                         # 하네스 실행기
 phases/                          # step 정의·실행 기록
-pointmass/                       # 1차 목표 산출물: 클린 버전 (원본 그대로 복사) —
-                                  #   pointmass_core.py, pointmass_notebook.ipynb
-grasp_carry/                     # 은닉 물성 기반 파지·운반 서브프로젝트 (ADR-006) —
-                                  #   JAX/Haiku 스택(ADR-003과 공유). src/grasp_carry/
-                                  #   구조는 grasp_carry/README.md 참고.
-square_assembly/                 # robomimic/Diffusion Policy 서브프로젝트 (ADR-007) —
-                                  #   별도 스택(PyTorch), 별도 conda env. src/square_assembly/
-                                  #   구조·환경설정은 square_assembly/README.md 참고.
+projects/                        # 연구 프로젝트 폴더 모음
+  pointmass/                     #   1차 목표 산출물: 클린 버전 (원본 그대로 복사) —
+                                  #     pointmass_core.py, pointmass_notebook.ipynb
+  grasp_carry/                   #   은닉 물성 기반 파지·운반 서브프로젝트 (ADR-006) —
+                                  #     JAX/Haiku 스택(ADR-003과 공유). src/grasp_carry/
+                                  #     구조는 projects/grasp_carry/README.md 참고.
+  square_assembly/               #   robomimic/Diffusion Policy 서브프로젝트 (ADR-007) —
+                                  #     별도 스택(PyTorch), 별도 conda env. src/square_assembly/
+                                  #     구조·환경설정은 projects/square_assembly/README.md 참고.
 ```
 
 - 클린 버전은 레포 루트에 원본 파일명·내용 그대로 복사한다 (ADR-004).

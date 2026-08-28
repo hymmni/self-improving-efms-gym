@@ -16,11 +16,11 @@ GraspCarry2D — 은닉 물성(마찰·질량 등) 기반 2D 파지·운반 환�
 ## 실행
 
 의존성은 레포 루트의 `requirements.txt`(JAX 스택 공유). Docker `jax` 서비스가
-`PYTHONPATH=/workspace/grasp_carry/src`를 설정해두므로 별도 설치 없이 바로 import된다.
+`PYTHONPATH=/workspace/projects/grasp_carry/src`를 설정해두므로 별도 설치 없이 바로 import된다.
 
 ```bash
 python -m grasp_carry.scripts.train.train_carry_actor --help
 python -m grasp_carry.scripts.record.record_carry --help
 ```
 
-로컬(비-Docker)에서 실행할 때는 `PYTHONPATH=grasp_carry/src`를 직접 설정한다.
+로컬(비-Docker)에서 실행할 때는 `PYTHONPATH=projects/grasp_carry/src`를 직접 설정한다.

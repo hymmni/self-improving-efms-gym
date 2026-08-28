@@ -13,13 +13,13 @@ experiments/
 docs/
 phases/
 
-square_assembly/outputs/
-square_assembly/results/
-square_assembly/data/
-square_assembly/.pytest_cache/
-square_assembly/src/square_assembly.egg-info/
+projects/square_assembly/outputs/
+projects/square_assembly/results/
+projects/square_assembly/data/
+projects/square_assembly/.pytest_cache/
+projects/square_assembly/src/square_assembly.egg-info/
 
-grasp_carry/data/
-grasp_carry/checkpoints/
-grasp_carry/outputs/
-grasp_carry/results/
+projects/grasp_carry/data/
+projects/grasp_carry/checkpoints/
+projects/grasp_carry/outputs/
+projects/grasp_carry/results/

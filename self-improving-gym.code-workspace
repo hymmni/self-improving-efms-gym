@@ -1,6 +1,6 @@
 {
   "folders": [
     { "name": "jax (root)", "path": "." },
-    { "name": "torch (square_assembly)", "path": "square_assembly" }
+    { "name": "torch (square_assembly)", "path": "projects/square_assembly" }
   ]
 }

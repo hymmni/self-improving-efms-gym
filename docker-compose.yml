@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     image: self-improving-gym/dev:latest
-    working_dir: /workspace/grasp_carry
+    working_dir: /workspace/projects/grasp_carry
     volumes:
       - .:/workspace
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
