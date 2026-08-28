@@ -54,7 +54,9 @@ phases/                          # (레거시) 과거 phase의 step 정의·실�
                                   #   <plan>.state.json을 쓴다 (harness 스킬 참고)
 projects/                        # 연구 프로젝트 폴더 모음
   pointmass/                     #   1차 목표 산출물: 클린 버전 (원본 그대로 복사) —
-                                  #     pointmass_core.py, pointmass_notebook.ipynb
+                                  #     pointmass_core.py, pointmass_notebook.ipynb.
+                                  #     archive/에 과거 진단·실험 스크립트(전부 pointmass_core
+                                  #     파생) 보관. 구조는 projects/pointmass/README.md 참고.
   grasp_carry/                   #   은닉 물성 기반 파지·운반 서브프로젝트 (ADR-006) —
                                   #     JAX/Haiku 스택(ADR-003과 공유). src/grasp_carry/
                                   #     구조는 projects/grasp_carry/README.md 참고.
@@ -63,7 +65,7 @@ projects/                        # 연구 프로젝트 폴더 모음
                                   #     구조·환경설정은 projects/square_assembly/README.md 참고.
 ```
 
-> ⚠️ 위 트리는 conflict 해소 시점 기준으로, `archive/`, `configs/`, `docker/` 등 최근 추가된 최상위 디렉토리는 아직 반영하지 않았다. 다른 세션의 `archive/` 정리가 끝나는 대로 이 문서 전체를 실제 구조에 맞춰 다시 스냅샷할 예정이다.
+> ⚠️ 위 트리는 conflict 해소 시점 기준으로, `configs/`, `docker/` 등 최근 추가된 최상위 디렉토리는 아직 반영하지 않았다(`archive/`는 정리 완료 — `projects/pointmass/archive/`, `projects/grasp_carry/archive/`로 흡수됨).
 
 - 클린 버전은 레포 루트에 원본 파일명·내용 그대로 복사한다 (ADR-004).
 - 2차 목표의 확장 코드도 루트에 추가한다 (원본 노트북은 수정하지 않고 별도 파일로 — 4절 참조).

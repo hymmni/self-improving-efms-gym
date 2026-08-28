@@ -11,6 +11,8 @@ GraspCarry2D — 은닉 물성(마찰·질량 등) 기반 2D 파지·운반 환�
 - `src/grasp_carry/scripts/` — 실행 진입점. `train/`(정책 학습), `collect/`(데모/롤아웃 수집),
   `record/`(mp4 영상 녹화), `analyze/`(체크포인트 평가·비교·진단)로 기능별 분류
 - `tests/` — pytest 스위트
+- `archive/` — pymunk 기반 v1~v3 프로토타입(`grasp_carry_env.py`). 죽은 코드지만 현재
+  `env.py`가 실측 교훈을 각주로 인용하므로 근거 기록용으로 보관.
 - `data/`, `checkpoints/`, `results/`, `outputs/` — 대용량/산출물 (git 미추적)
 
 ## 실행
