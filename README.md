@@ -22,24 +22,58 @@ references/          # 원본 참조 코드 (읽기 전용)
 
 이 레포엔 서로 호환되지 않는 두 스택이 공존합니다: `pointmass`·`grasp_carry`는 JAX/Haiku, `square_assembly`는 PyTorch/robosuite/mujoco. 아래 두 방법 중 하나를 선택하세요.
 
-### 방법 A — Docker (권장, 두 스택 한 번에)
+### 방법 A — Docker (권장)
+
+두 스택(JAX/PyTorch)의 충돌하는 의존성을 컨테이너 하나로 묶어서 씁니다. Docker가 처음이어도 아래 순서를 그대로 따라오면 됩니다.
+
+**0) 최초 1회 준비**
 
 ```bash
-cp .env.example .env        # WANDB_API_KEY 등 채우기
+cp .env.example .env        # WANDB_API_KEY 등 채우기 (없어도 대부분 기능은 동작)
+```
+
+**1) 이미지 빌드**
+
+```bash
 docker compose build
+```
+
+`docker/Dockerfile`을 읽어 JAX/PyTorch venv 2개가 든 이미지를 만듭니다. 처음 빌드는 패키지 다운로드 때문에 5~15분 정도 걸릴 수 있고, 이후엔 바뀐 줄부터만 다시 설치되니 훨씬 빠릅니다.
+
+**2) 컨테이너 실행**
+
+```bash
 docker compose run --rm dev bash
 ```
 
-컨테이너 안에서 스택별 venv를 activate 합니다.
+- `dev`는 `docker-compose.yml`에 정의된 서비스 이름입니다.
+- `--rm`은 "쉘에서 나가면(`exit`) 컨테이너를 자동으로 지운다"는 뜻입니다 — 지워지는 건 컨테이너뿐이고, 레포 코드는 호스트(지금 이 폴더)를 그대로 마운트해서 보는 것이라 나가도 작업 내용은 남습니다.
+- 들어가면 컨테이너 안 셸(`/workspace`)입니다. 스택에 맞는 venv를 activate:
 
 ```bash
 source /opt/venvs/jax/bin/activate     # pointmass, grasp_carry
 source /opt/venvs/torch/bin/activate   # square_assembly
 ```
 
-GPU 서버에서 실행, VS Code Dev Containers 연동, X11 GUI(텔레옵/뷰어) 설정 등 상세는 `DOCKER.md`를 참고하세요.
+**3) 나가기 / 다시 들어가기**
 
-### 방법 B — 로컬 conda (스택별 개별 설치)
+- 나가기: `exit` (또는 Ctrl+D) — `--rm`이라 컨테이너가 삭제됩니다.
+- 컨테이너가 이미 떠 있는 상태에서 셸을 하나 더 열고 싶으면: `docker compose exec dev bash`
+- 다음에 다시 작업할 땐 `docker compose run --rm dev bash`를 그대로 다시 실행하면 됩니다 (이미지는 이미 빌드돼 있으니 바로 시작됩니다).
+
+**4) 의존성을 바꿨거나 문제가 생겼을 때**
+
+```bash
+docker compose build                       # requirements.txt 등을 바꾼 뒤 반영
+docker compose build --no-cache            # 캐시 없이 완전히 새로 빌드 (재빌드로도 안 풀릴 때)
+docker rmi self-improving-gym/dev:latest   # 이미지 자체를 지움 (다음 build 때 처음부터 새로 받음)
+```
+
+GPU 서버에서 실행, VS Code Dev Containers 연동, X11 GUI(텔레옵/뷰어) 설정, 새 패키지 추가 규칙 등 상세는 `DOCKER.md`를 참고하세요.
+
+### 방법 B — 로컬 conda (Docker를 못 쓸 때)
+
+Docker를 설치할 수 없는 환경이라면 스택별로 직접 설치할 수 있습니다. 설치 대상이 늘어날수록(스택 2개, 버전 고정 다수) 방법 A보다 손이 많이 갑니다.
 
 **JAX 스택** (`pointmass`, `grasp_carry`) — 레포 루트에서:
 ```bash
@@ -47,7 +81,7 @@ conda create -n self-improving-gym python=3.11 -y
 conda activate self-improving-gym
 pip install -r requirements.txt
 ```
-GPU(CUDA) 환경을 전제로 `jax[cuda12]`가 설치됩니다. GPU가 없어도 두 트랙 모두 규모가 작아 CPU만으로 충분히 돌아갑니다(`jax[cpu]`로 교체). 버전 pin의 근거는 `experiments/2026-07-03_clean-repro.md` 참고.
+GPU(CUDA) 환경을 전제로 `jax[cuda12]`가 설치됩니다. GPU가 없어도 두 트랙 모두 규모가 작아 CPU만으로 충분히 돌아갑니다(`jax[cpu]`로 교체). 버전 pin의 근거는 `experiments/2026-07-03_clean-repro.md` 참고. `grasp_carry` 실행 전엔 `PYTHONPATH=projects/grasp_carry/src`를 직접 설정해야 합니다(방법 A는 컨테이너가 이미 잡아둠).
 
 **PyTorch 스택** (`square_assembly`) — 별도 env:
 ```bash
