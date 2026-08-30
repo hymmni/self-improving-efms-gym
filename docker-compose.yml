@@ -4,10 +4,12 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     image: self-improving-gym/dev:latest
-    working_dir: /workspace/projects/grasp_carry
+    working_dir: /workspace
     volumes:
       - .:/workspace
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.claude.json:/root/.claude.json
     environment:
       - DISPLAY=${DISPLAY}
       - WANDB_API_KEY=${WANDB_API_KEY}
