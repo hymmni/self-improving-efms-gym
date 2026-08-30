@@ -20,6 +20,8 @@ VS Code에 [Dev Containers 확장](https://marketplace.visualstudio.com/items?it
 
 컨테이너/창 재시작이 필요 없으니, 두 스택을 오가며 작업해도 VS Code를 하나만 켜두면 됩니다.
 
+컨테이너 안에 Node.js + Claude Code CLI도 같이 설치됩니다(`postCreateCommand`). VS Code 통합 터미널(컨테이너 안 터미널)에서 바로 `claude`를 실행하면, 코드 편집·python 실행이 전부 같은 셸에서 이뤄져 매 명령을 `docker compose exec`로 감쌀 필요가 없습니다. 로그인 정보는 호스트의 `~/.claude`와 `~/.claude.json`을 그대로 bind-mount해서 쓰므로(`docker-compose.yml`) — 자격증명은 `~/.claude/.credentials.json`에, 온보딩/프로젝트 신뢰 상태는 `~/.claude.json`에 나뉘어 있어 둘 다 마운트해야 함 — 호스트에서 이미 로그인돼 있으면 컨테이너 안에서 별도 로그인이 필요 없고, `--rm`으로 컨테이너가 지워지거나 이미지를 재빌드해도 로그인이 유지됩니다. 호스트에 `~/.claude`가 아직 없으면(Claude Code를 host에서 써본 적 없으면) 빈 폴더가 자동 생성되고 컨테이너 안에서 최초 1회 로그인하면 됩니다. 단 `~/.claude.json`은 파일 하나를 바로 마운트하는 거라, 호스트에 그 파일이 아예 없는 상태(=host에서 Claude Code를 한 번도 실행 안 한 상태)로 컨테이너를 띄우면 Docker가 그 경로에 빈 디렉터리를 만들어버려 컨테이너 안 Claude Code가 깨질 수 있음 — 이 경우 호스트에서 `claude`를 한 번 실행해 파일을 만든 뒤 컨테이너를 다시 띄우면 됨.
+
 ## 0. 최초 1회 준비
 
 ```bash

@@ -58,6 +58,7 @@ python3 scripts/execute.py docs/superpowers/plans/<file>.md --model sonnet
 - `python scripts/merge_to_main.py <feat-branch> [--push]` # feature 브랜치를 main에 병합 (pull→rebase→`--no-ff`)
 - `python scripts/tmux_autoresume.py [--session NAME]` # tmux에서 claude 실행 → 리밋 시 리셋 후 자동 "continue" (세션 이어가기, 권장)
 - `python scripts/scheduler.py {--time HH:MM | --in 2h30m} [--resume <id> | --cmd "..."] --prompt "..."` # 지정 시각에 claude/명령 실행 (외부 터미널용)
+- `python scripts/sync_remote.py {push|pull} user@host:/절대/경로/레포루트 [--only data,checkpoints,...] [--project 이름] [--dry-run] [--delete]` # SSH 원격 서버와 data/checkpoints/outputs/results 동기화 (rsync, 보통 호스트에서 실행 — ADR-002)
 
 ### ⏰ 세션 연속 규칙
 리밋을 넘겨 이어가는 방법은 작업 종류에 따라 다르다. **추측해서 시각을 자동계산하지 않는다** — 리셋 시각이 필요하면 `claude -p "/usage"`로 공식값을 조회한다.
