@@ -56,32 +56,24 @@ python3 scripts/execute.py docs/superpowers/plans/<file>.md --model sonnet
 연구/데이터 수집·시각화 스크립트(`watch_*.py`, `record_*.py`, `drive_*.py` 등) 전체 목록과 옵션은 `COMMANDS.md`를 참고하라. 아래는 하네스 자체의 메타 스크립트다.
 - `python scripts/execute.py <plan.md> [--model MODEL] [--checkpoint-every N] [--push]` # 클로드의 자가 교정 실행 (하네스 내부용, 예외적 사용 — 위 개발 프로세스 참고)
 - `python scripts/merge_to_main.py <feat-branch> [--push]` # feature 브랜치를 main에 병합 (pull→rebase→`--no-ff`)
-- `python scripts/tmux_autoresume.py [--session NAME]` # tmux에서 claude 실행 → 리밋 시 리셋 후 자동 "continue" (세션 이어가기, 권장)
 - `python scripts/scheduler.py {--time HH:MM | --in 2h30m} [--resume <id> | --cmd "..."] --prompt "..."` # 지정 시각에 claude/명령 실행 (외부 터미널용)
 - `python scripts/sync_remote.py {push|pull} user@host:/절대/경로/레포루트 [--only data,checkpoints,...] [--project 이름] [--dry-run] [--delete]` # SSH 원격 서버와 data/checkpoints/outputs/results 동기화 (rsync, 보통 호스트에서 실행 — ADR-002)
 
 ### ⏰ 세션 연속 규칙
-리밋을 넘겨 이어가는 방법은 작업 종류에 따라 다르다. **추측해서 시각을 자동계산하지 않는다** — 리셋 시각이 필요하면 `claude -p "/usage"`로 공식값을 조회한다.
+리밋을 넘겨 이어가려면 `scripts/scheduler.py`로 리셋 시각에 재실행을 예약한다. **추측해서 시각을 자동계산하지 않는다** — 리셋 시각이 필요하면 `claude -p "/usage"`로 공식값을 조회한다.
 
-#### ① 인터랙티브 작업 → tmux 자동 재개 (권장)
-`tmux_autoresume.py`는 claude를 tmux 안에서 띄우고, 감시 창이 화면을 폴링하다 리밋을 감지하면 **리셋 시각에 같은 세션에 `send-keys "continue"`**를 보낸다. 새 프로세스 resume이 아니라 살아있는 세션에 입력을 꽂는 것이라 **fork가 없고**, 터미널을 닫아도 tmux라 생존한다.
-```bash
-python3 scripts/tmux_autoresume.py            # tmux 세션 띄우고 claude+감시기 시작, attach
-```
-한 번 띄워두면 그 뒤 리밋이 와도 무인으로 이어진다. (tmux 필요: `sudo apt install tmux`. 리밋 배너 문구가 버전마다 달라 감지 정규식 조정이 필요할 수 있다.)
+**클로드가 직접 실행하지 마라.** `scheduler.py`는 지금 세션이 끝난 뒤(리밋으로 종료된 뒤)에도 살아있어야 하는 예약이라, 클로드가 지금 세션의 Bash 툴로 띄우면 세션 종료 시 함께 죽어 의미가 없다 — 실행할 명령어만 제시하고, **사용자가 자신의 터미널에서 직접 실행**하게 하라.
 
-#### ② execute.py(헤드리스) → 재진입으로 이어간다
-execute.py는 `<plan>.state.json`의 완료 task를 건너뛰므로, 리밋 등으로 중단돼도 **리셋 후 `python3 scripts/execute.py <plan.md>`를 다시 실행**하면 이어진다. 별도 예약 메커니즘이 없어도 된다. 원하면 그 재실행을 리셋 시각에 예약할 수 있다:
-```bash
-python3 scripts/scheduler.py --time HH:MM --cmd "python3 scripts/execute.py <plan.md>"
-```
+- **인터랙티브 세션 재개**: `--resume <세션ID>`로 예약한다. 단, 그 세션을 다른 곳에서 동시에 계속 쓰고 있는 상태라면 겹쳐 발화해 fork가 생길 수 있으니 쓰지 않는다 — 그런 경우엔 리셋 후 수동으로 이어간다.
+  ```bash
+  python3 scripts/scheduler.py --time HH:MM --resume <세션ID> --prompt "continue"
+  ```
+- **execute.py(헤드리스)**: `<plan>.state.json`의 완료 task를 건너뛰므로 리밋으로 중단돼도 그냥 재실행하면 이어진다. 원하면 그 재실행을 리셋 시각에 예약한다.
+  ```bash
+  python3 scripts/scheduler.py --time HH:MM --cmd "python3 scripts/execute.py <plan.md>"
+  ```
 
-#### 큰 작업 시작 전 — 승인과 함께 안내한다
-`execute.py` 등 여러 task짜리 큰 작업을 시작하기 직전(평소 승인 타이밍)에 `AskUserQuestion`으로:
-1. 이 작업의 **대략적 토큰 소모 규모**(작음/보통/큼)를 알린다. 필요하면 `claude -p "/usage"`로 현재 사용률%를 근거로 제시한다.
-2. **그냥 실행** vs **리셋 시각 재실행 예약도 함께**(②의 scheduler.py `--cmd`) 중 선택받는다.
-
-> `scheduler.py`로 `--resume <현재 세션>`을 거는 것은 살아있는 세션에 동시에 발화하면 fork 위험이 있다. 인터랙티브 이어가기는 ①(tmux)을 쓰고, scheduler는 "새 세션 시작"이나 ②의 헤드리스 재실행에 쓴다.
+`execute.py` 등 여러 task짜리 큰 작업을 시작하기 직전(평소 승인 타이밍)에는 리셋 시각 재실행 예약이 필요한지 사용자에게 먼저 물어본다.
 
 ### 🔀 main 병합 규칙 (CRITICAL)
 사용자가 feature 브랜치를 **main에 병합**해달라고 요청하면:

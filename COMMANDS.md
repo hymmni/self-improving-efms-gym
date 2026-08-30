@@ -423,6 +423,5 @@ pytest projects/square_assembly/tests/
 ```bash
 python scripts/execute.py <plan.md> [--model MODEL] [--checkpoint-every N] [--push]   # 플랜 task 자동 실행
 python scripts/merge_to_main.py [feat-branch] [--push] [--yes]                        # main 병합 (직접 git merge 금지)
-python scripts/tmux_autoresume.py [--session NAME]                                     # 리밋 자동 재개 tmux 세션
 python scripts/scheduler.py {--time HH:MM | --in DURATION} [--resume ID | --cmd CMD] --prompt "..."  # 예약 실행
 ```
