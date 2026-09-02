@@ -71,13 +71,18 @@ def test_allow_regrasp_false_never_enters_the_relocate_phase():
   direct = ScriptedCarryPolicy(allow_regrasp=False)
 
   # 재파지가 실제로 일어나는 시드를 찾는다(소스 박스 내폭이 랜덤이라 시드마다
-  # 얕은/깊은 파지가 갈린다).
-  for seed in range(12):
+  # 얕은/깊은 파지가 갈린다). 2026-08-30: max_descend_y가 그리퍼의 (완전히
+  # 벌렸을 때 상수가 아니라) **현재 개도** 기준으로 바뀌면서(사용자 요청 —
+  # teleop에서 미리 grip을 닫아 좁은 박스에 더 깊이 들어갈 수 있어야 함),
+  # 접근 중 개도가 아직 다 안 벌어진 짧은 과도 구간에 원래보다 깊이 들어가
+  # 재파지가 필요 없어지는 시드가 늘었다(예: 이전엔 0..11 중에도 있었지만
+  # 지금은 없음) — 탐색 범위를 넓혀 여전히 재파지가 발생하는 시드를 찾는다.
+  for seed in range(60):
     phases, _ = rollout(env, regrasping, seed)
     if 'relocate' in phases:
       break
   else:
-    pytest.fail('no seed in 0..11 triggers a regrasp')
+    pytest.fail('no seed in 0..59 triggers a regrasp')
   assert regrasping.regrasped and regrasping.n_regrasps >= 1
 
   phases, _ = rollout(env, direct, seed)

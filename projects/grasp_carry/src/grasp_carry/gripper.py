@@ -39,6 +39,14 @@ import pymunk
 
 from .config import CarryConfig
 
+# 개도(gap) PD 게인 — `apply_grip`이 목표 개도로 손가락을 수렴시킬 때 쓴다.
+# grip_force(12000mN)/finger_mass(0.030kg) 기준으로, 오차 8mm부터 최대 힘에
+# 포화하도록 잡았다(그보다 큰 오차에서는 예전 상수-힘 액추에이터와 동일하게
+# 항상 최대 힘으로 접근하고, 목표 근처 ~8mm 안에서만 부드럽게 감속해 정지한다).
+# 임계감쇠는 `config.k_v`와 같은 공식(`2*sqrt(k_p)`)으로 유도한다.
+_GRIP_K_P = 50_000.0    # 1/s^2
+_GRIP_K_V = 2.0 * math.sqrt(_GRIP_K_P)   # 1/s, 임계감쇠
+
 
 def _rect(x0: float, y0: float, x1: float, y1: float) -> List[Tuple[float, float]]:
   return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
@@ -163,22 +171,62 @@ class Gripper:
     return float(right.x - left.x)
 
   @property
+  def outer_width(self) -> float:
+    """**지금** 개도 기준 그리퍼 전체 바깥 폭(mm) — 손가락을 닫을수록 좁아진다.
+
+    `cfg.gripper_outer_width`(완전히 벌렸을 때 기준, 상수)와 달리 이건 현재
+    상태를 반영한다. `env.max_descend_y`가 이걸 쓰면, 좁은 박스 위에서 미리
+    grip을 닫아 몸통을 좁힌 뒤 더 깊이 내려가는 것(=실제 로봇이 하는 사전
+    파지 준비)이 가능해진다(2026-08-30 사용자 요청).
+    """
+    return self.gap + 2.0 * self.cfg.finger_thickness
+
+  @property
   def pose(self) -> Tuple[float, float, float]:
     """(x, y, angle)"""
     return (float(self.base.position.x), float(self.base.position.y),
             float(self.base.angle))
 
   # ------------------------------------------------------------------ 제어
-  def apply_grip(self, closing: bool) -> None:
-    """손가락에 그립력을 인가한다(닫힘/열림 모두 같은 크기 = 같은 모터).
+  def apply_grip(self, grip: float) -> None:
+    """손가락을 `grip`(0=완전히 열림, 1=완전히 닫힘)에 대응하는 목표 개도로
+    PD 위치제어한다.
+
+    2026-08-30 정정: 처음엔 힘의 **세기**를 grip으로 선형보간했는데(항상
+    같은 방향으로 순 힘이 남는 한 결국 `finger_speed_max`까지 가속해 기계적
+    한계까지 가버리는 자유 강체라서), 빈 공간에서는 grip=0.5 근방만 거의 안
+    움직이고 그 문턱을 넘는 순간 반대쪽 끝까지 확 튀는 문제가 실측됐다(사용자
+    리포트). 목표 **개도**(gap)로 향하는 스프링-댐퍼로 바꾸면 빈 공간에서도
+    목표 개도에 안정적으로 수렴한다 — 힘은 여전히 `grip_force`로 클립하므로
+    (기존 상수-힘 액추에이터와 같은 최대 스퀴즈력), 물체를 물었을 때(목표
+    개도가 물체 폭보다 작아 못 미치는 경우)는 여전히 같은 최대 힘으로
+    누르고, 패드-물체 마찰 접촉만으로 파지가 성립해 한계를 넘으면 점진적으로
+    미끄러지는 기존 물리가 그대로 유지된다. `grip=0.0`/`1.0`은 목표가 각각
+    `finger_opening_max`/`finger_opening_min`(기계적 양 끝)이라 예전 상수-힘
+    방식과 사실상 같게 수렴한다(도중엔 같은 최대힘으로 가속하다가 끝에서
+    부드럽게 정지 — 예전처럼 최고속도로 하드스톱에 부딪히지 않는다는 점만
+    다르다).
 
     매 물리 substep마다 호출되는 것을 전제로 한다(pymunk는 step마다 힘을
     비운다). 조인트로 붙이지 않고 힘만 걸므로, 파지는 패드-물체 마찰 접촉으로만
     성립하고 한계를 넘으면 **점진적으로** 미끄러진다.
     """
-    f = self.cfg.grip_force
+    cfg = self.cfg
+    target_gap = cfg.finger_opening_max - float(grip) * (
+        cfg.finger_opening_max - cfg.finger_opening_min)
+    err = target_gap - self.gap
+
+    axis = pymunk.Vec2d(math.cos(self.base.angle), math.sin(self.base.angle))
+    base_vel = self.base.velocity
+    along = [(body.velocity - base_vel).dot(axis) for body in self.fingers]
+    gap_vel = along[1] - along[0]   # d(gap)/dt: 오른손가락(+) - 왼손가락(-)
+
+    f = (_GRIP_K_P * cfg.finger_mass * err
+         - _GRIP_K_V * cfg.finger_mass * gap_vel)
+    fmax = cfg.grip_force
+    f = max(-fmax, min(fmax, f))    # 기존과 같은 최대 스퀴즈/오픈 힘으로 클립
     for sign, body in zip(self._signs, self.fingers):
-      fx = -sign * f if closing else sign * f
+      fx = sign * f
       # 로컬 좌표 힘 → 베이스가 기울어도 항상 개폐 축 방향이다.
       body.apply_force_at_local_point((fx, 0.0), (0.0, 0.0))
 

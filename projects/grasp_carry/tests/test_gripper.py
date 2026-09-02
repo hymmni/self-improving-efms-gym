@@ -121,7 +121,7 @@ def test_finger_speed_relative_to_base_is_clamped():
   worst = 0.0
   for _ in range(300):
     g.apply_pose_control((g.base.position.x, g.base.position.y), 0.0)
-    g.apply_grip(closing=True)
+    g.apply_grip(grip=1.0)
     space.step(cfg.physics_dt)
     g.clamp_finger_speed()
     axis = pymunk.Vec2d(math.cos(g.base.angle), math.sin(g.base.angle))
@@ -161,7 +161,7 @@ def test_fingers_stay_symmetric_when_one_side_is_pushed():
   axis = pymunk.Vec2d(1.0, 0.0)               # base.angle = 0
   worst = 0.0
   for i in range(400):
-    g.apply_grip(closing=True)
+    g.apply_grip(grip=1.0)
     if i < 200:                               # 오른손가락만 바깥으로 민다
       g.fingers[1].apply_force_at_local_point((5_000.0, 0.0), (0.0, 0.0))
     space.step(cfg.physics_dt)

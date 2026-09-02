@@ -125,7 +125,12 @@ class CarryConfig:
   src_box_wall_height: float = 95.0   # mm
   # 타겟 박스는 낮다 — 캐리한 블록을 rim 위로 넘기기 쉬워야 한다.
   tgt_box_wall_height: float = 40.0   # mm
-  world_margin: float = 4.0           # mm; 박스 바깥면과 월드 벽 사이 간격
+  # mm; 박스 바깥면과 월드 벽 사이 간격. 2026-08-30: 4mm는 완전히 닫은
+  # 그리퍼 반폭(finger_opening_min/2+finger_thickness=20mm)보다도 좁아서,
+  # 박스 바깥쪽 가장자리 근처로 다가가면 그리퍼 몸통이 박스가 아니라 **진짜
+  # 월드 벽**에 먼저 막혔다(teleop에서 실측) — 박스 자체가 만드는 난이도와
+  # 무관한 우연한 제약이라 여유를 늘렸다.
+  world_margin: float = 30.0
 
   # --- 제어/물리 ------------------------------------------------------------
   # EE 임피던스 PD 강성(가속도 차원, 1/s^2). w_n = sqrt(k_p) = 20 rad/s
@@ -173,14 +178,21 @@ class CarryConfig:
 
   @property
   def src_box_width_range(self) -> Tuple[float, float]:
-    """소스 박스 내폭의 랜덤 범위 — `gripper_outer_width`의 0.85~1.25배.
+    """소스 박스 내폭의 랜덤 범위 — `gripper_outer_width`의 0.6~1.25배.
 
-    이 범위가 `gripper_outer_width`를 걸치지 않으면(항상 상회/하회) 모든
-    에피소드가 항상 깊게 또는 항상 얕게만 잡혀 설계 의도(파지 깊이의
-    에피소드 간 다양성)가 깨진다.
+    `max_descend_y`가 **지금 개도** 기준으로 판정하도록 바뀌면서(2026-08-30),
+    미리 grip을 닫아 몸통을 좁히면 더 좁은 박스에도 들어갈 수 있게 됐다.
+    다만 그것도 한계가 있다 — 블록을 걸치려면 개도가 최소
+    `object_width_range` 상한(블록이 가장 넓을 때) 이상은 돼야 하므로, 몸통
+    폭은 최소 `object_width_range[1] + 2*finger_thickness` 아래로는 못
+    좁힌다(그 밑까지 닫으면 블록보다 좁아져서 걸칠 수가 없다). 그래서 박스
+    내폭이 이 최소 몸통 폭보다 좁으면 **아무리 잘 닫아도 얕은 파지만
+    가능**하다 — 하한을 0.85배(항상 이 문턱보다 넓음)에서 0.6배로 낮춰 그런
+    "진짜로 항상 얕은" 에피소드도 일부 나오게 한다(사용자 요청, 2026-08-30).
+    상한(1.25배)은 그대로 — 그 쪽은 이미 손대지 않아도 다양성이 있었다.
     """
     gow = self.gripper_outer_width
-    return (0.85 * gow, 1.25 * gow)
+    return (0.6 * gow, 1.25 * gow)
 
   @property
   def tgt_box_width(self) -> float:

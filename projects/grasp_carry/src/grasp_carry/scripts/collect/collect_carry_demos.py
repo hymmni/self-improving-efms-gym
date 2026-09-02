@@ -1,7 +1,7 @@
 r"""GraspCarry2D 롤아웃을 STG 학습용 데모로 저장.
 
-    python collect_carry_demos.py --episodes 500 --out data/grasp_carry_demos_v4.pkl
-    python collect_carry_demos.py --episodes 500 --explore-range 0.4 200 \
+    python -m grasp_carry.scripts.collect.collect_carry_demos --episodes 500 --out data/grasp_carry_demos_v4.pkl
+    python -m grasp_carry.scripts.collect.collect_carry_demos --episodes 500 --explore-range 0.4 200 \
         --out data/grasp_carry_demos.pkl
 
 `src/dp_policy.py`의 `collect_rollouts()`(PushT)와 **동일 포맷·동일 라벨 정의**를 쓴다:
@@ -32,6 +32,15 @@ Stage-1 데모인 것처럼 fail-aware 예측기 학습에 썼었다. 그 데이
   범위에서는 회전-미끄러짐 실패가 사실상 안 일어난다 — 그래서 이 모드로 모은
   데이터는 실패가 거의 0에 가깝다. **이건 버그가 아니라 의도한 동작이다**(좋은
   시연자는 실패하지 않는다).
+  2026-08-30 정정: `max_descend_y`가 그리퍼의 **지금 개도** 기준으로 판정하도록
+  바뀌고(미리 grip을 닫아 몸통을 좁히면 더 좁은 박스에도 들어갈 수 있게),
+  `src_box_width_range` 하한도 낮아지면서(0.85배→0.6배) 일부 에피소드는 grip을
+  아무리 잘 조절해도(블록을 걸치려면 필요한 최소 개도보다 박스가 좁아서) 절대
+  깊이 못 들어가는 "항상 얕은 파지"가 됐다(150 시드 실측 ~13%) — 이 스크립트
+  기본 모드의 성공률은 그 영향으로 100%에서 ~97.3%로 소폭 내려갔다(나머지
+  timeout/tipped, `--keep-failures` 없이는 자동으로 제외됨). "실패가 거의
+  0"이라는 위 서술은 대략적으로는 여전히 맞지만 더 이상 정확히 0에 가깝지는
+  않다 — 좁은 박스가 만드는 진짜 난이도이니 `--episodes`를 넉넉히 잡을 것.
 - **`--explore-range LOW HIGH`(레거시, v3 재현용)**: `_speed_cap()`의 안전식을
   완전히 무시하고 매 파지마다 그 구간에서 균일 샘플한 속도를 강제한다 — 얕은
   파지에서 실제로 놓치는/넘어지는 사례를 **인위적으로** 만든다. Stage-1 데모

@@ -110,7 +110,13 @@ class GraspCarry2D:
   액션 `(x, y, theta, grip)`:
     x, y   — **절대** 목표 위치(mm, 월드 좌표). 임피던스 PD의 목표점이다.
     theta  — 절대 목표 자세(rad).
-    grip   — > 0.5 이면 닫기, 아니면 열기(이진).
+    grip   — 0(완전히 열림)~1(완전히 닫힘) 연속값, 목표 개도(gap)로의 PD
+             위치제어다(`gripper.apply_grip` 참고, 2026-08-30 — 처음엔 힘의
+             세기를 선형보간했으나 접촉 없는 빈 공간에서는 결국 한쪽 끝까지
+             가속해버려 무의미했다). 힘은 여전히 `grip_force`로 클립되므로
+             스크립트 정책처럼 항상 0.0/1.0만 내는 경로는 동작이 사실상
+             그대로고, teleop처럼 중간값을 내는 조작만 목표 개도에 안정적으로
+             수렴한다.
 
   관측은 `FRAME_FIELDS` 프레임을 `cfg.obs_history`개 스택한 1차원 float32
   벡터(오래된 프레임 → 최신 프레임 순)다. 길이는 `world_width`로 정규화한다.
@@ -252,10 +258,15 @@ class GraspCarry2D:
     """제어 스텝 1회 = `n_substeps` 물리 substep."""
     cfg = self.cfg
     x, y, theta, grip = (float(v) for v in action)
-    closing = grip > 0.5
-    half = cfg.gripper_outer_width / 2.0
-    # 작업공간 한계(로봇 기구학) — 그리퍼가 월드 벽을 밀지 않게 한다.
-    tx = float(np.clip(x, half, cfg.world_width - half))
+    grip = float(np.clip(grip, 0.0, 1.0))
+    # 2026-08-30: 좌우(x) 목표 클립을 없앴다(사용자 요청 — 월드 벽에 그리퍼가
+    # 짧게 부딪히는 정도는 감수). Y축과 달리 오버슈트를 되돌리는 하드스톱이
+    # 없으므로, 목표가 벽 밖일 때 PD가 순간적으로 큰 힘을 내면서 substep
+    # 사이에 벽을 파고들 수 있다(=벽 뚫림/불안정 가능성 — Y축이 클립만으로는
+    # 부족해서 `max_descend_y` 하드스톱을 따로 둔 것과 같은 이유). 그런 게
+    # 실측되면 Y축과 동일한 방식(substep 후 위치 되돌리기)의 하드스톱을 여기도
+    # 추가할 것.
+    tx = x
 
     for _ in range(self.n_substeps):
       base = self.gripper.base
@@ -267,7 +278,7 @@ class GraspCarry2D:
 
       # 2) 제어력 인가
       self.gripper.apply_pose_control((tx, ty), theta)
-      self.gripper.apply_grip(closing)
+      self.gripper.apply_grip(grip)
 
       # 3) 물리
       self.space.step(cfg.physics_dt)
@@ -337,22 +348,27 @@ class GraspCarry2D:
     """주어진 x에서 베이스가 내려갈 수 있는 최저(=가장 큰) y.
 
     손가락 끝(`base_y + finger_length`)이 어떤 바닥면도 뚫지 않는 것이 기준이다.
-    그리퍼 바깥폭이 박스 개구부에 **들어가면** 박스 안 바닥까지, 아니면 rim
-    위까지만 내려갈 수 있다. 그리퍼의 좌우 span으로 판정하므로, 베이스가 박스
-    위에 완전히 오기 전부터 한계가 바뀐다(손가락이 먼저 걸리기 때문).
+    그리퍼 **지금 개도 기준** 바깥폭이 박스 개구부에 **들어가면** 박스 안
+    바닥까지, 아니면 rim 위까지만 내려갈 수 있다(2026-08-30: 이전엔 완전히
+    벌렸을 때 폭(`cfg.gripper_outer_width`, 상수)만 썼는데, 그러면 미리 grip을
+    닫아 몸통을 좁혀도 전혀 반영이 안 됐다 — 실제 로봇처럼 접근 전에 손가락을
+    좁혀두는 전략이 안 통했다. 지금은 `self.gripper.outer_width`(현재 개도
+    기준, 닫을수록 좁아짐)를 쓴다). 그리퍼의 좌우 span으로 판정하므로, 베이스가
+    박스 위에 완전히 오기 전부터 한계가 바뀐다(손가락이 먼저 걸리기 때문).
 
     `x`가 None이면 현재 베이스 x를 쓴다.
     """
     cfg = self.cfg
     if x is None:
       x = float(self.gripper.base.position.x)
-    half = cfg.gripper_outer_width / 2.0
+    outer_width = self.gripper.outer_width
+    half = outer_width / 2.0
     lo, hi = x - half, x + half
     limit = cfg.floor_y - cfg.finger_length
     for box in (self.src_box, self.tgt_box):
       if hi < box.left_outer or lo > box.right_outer:
         continue
-      fits = (box.inner_width >= cfg.gripper_outer_width + 2.0 * _FIT_CLEARANCE
+      fits = (box.inner_width >= outer_width + 2.0 * _FIT_CLEARANCE
               and lo >= box.left_inner + _FIT_CLEARANCE
               and hi <= box.right_inner - _FIT_CLEARANCE)
       surface = box.inner_floor_y if fits else box.rim_y
