@@ -1,21 +1,23 @@
-r"""GraspCarry2D 비최적(non-optimal) 데모를 사람 개입 복구와 함께 수집한다.
+r"""GraspCarry2D **학습된 DP(diffusion) 정책** 롤아웃을 사람 개입 복구와 함께 수집한다.
 
 디스플레이가 있는 PC에서 실행해야 한다(마우스/키보드 인터랙티브 창).
 
 ## 흐름
-1. **자동 접근·파지**: `ScriptedCarryPolicy`가 평소처럼 블록에 접근해서 잡는다.
-2. **자동 완전 무작위 방황**: 파지가 끝나면(운반 phase 진입) 박스 높이 같은
-   안전장치 없이 작업공간 아무 데나(경유지)로 향한다 — 도착하면 바로 다음
-   무작위 지점으로. 계속 이런 식이라 정말로 놓치는 일이 자주 생긴다(의도).
-   지금 향하고 있는 경유지는 화면에 마젠타 별표로 항상 표시된다.
-3. **사람 개입은 두 가지 경로로 들어간다**: (a) 자동 — 실제로 놓치면(2스텝
-   연속 `is_held()=False`, 접촉 깜빡임 노이즈 아님) 자동으로 사람 모드로
-   전환. (b) 수동 — 아무 때나 `h` 키를 누르면 즉시 사람 모드로/에서 전환된다
-   (양방향 토글). 사람 모드에서는 마우스 커서 = 그리퍼 목표, 왼쪽 버튼
-   누르는 동안 grip=닫힘. 다시 `h`를 누르면 방금 위치에서 이어서 자동
-   방황으로(새 무작위 경유지 하나 새로 뽑아서) 넘어간다 — 원할 때
-   자동/수동을 몇 번이고 오갈 수 있다.
-4. 에피소드가 끝나면(성공/전도/타임아웃) 자동으로 다음 에피소드로 넘어간다.
+1. **자동**: `--diff-ckpt`로 지정한 학습된 diffusion BC 정책이 접근·파지·
+   운반·놓기까지 전체 태스크를 수행한다(`collect_carry_bc_rollouts.py`와
+   동일한 receding-horizon 청크 실행 — 청크를 한 번에 예측해 그중
+   `exec_horizon`개만 실행하고 새 관측으로 재추론). 2026-08-31: 이전엔
+   `ScriptedCarryPolicy`(규칙 기반 베이스라인)를 굴렸으나, "정책 롤아웃 중
+   실패하면 인간 개입"의 진짜 의도는 **학습된 정책**의 실제 실패였다 — 스크립트
+   정책은 이미 100% 가까운 성공률로 실패가 인위적이지 않으면 거의 안 나온다.
+   이제 여기서 나는 실패는 DP가 데모에서 다 배우지 못한 부분에서 실제로 발생한
+   것이다(SI-EFM Stage-2와 동일한 발상).
+2. **사람 개입은 수동으로만** 들어간다: 아무 때나 `h` 키를 누르면 즉시 사람
+   모드로/에서 전환된다(양방향 토글, 자동 전환 없음). 사람 모드에서는 마우스
+   커서 = 그리퍼 목표, 왼쪽 버튼 누르는 동안 grip=닫힘. 다시 `h`를 누르면
+   방금 위치에서 이어서 DP가 재개된다(그 시점 관측으로 새 청크를 다시
+   예측한다) — 원할 때 자동/수동을 몇 번이고 오갈 수 있다.
+3. 에피소드가 끝나면(성공/전도/타임아웃) 자동으로 다음 에피소드로 넘어간다.
    `--out`에 주기적으로 자동 저장하므로 중간에 창을 닫아도 그때까지 모은 성공
    에피소드는 남는다.
 
@@ -27,7 +29,9 @@ r"""GraspCarry2D 비최적(non-optimal) 데모를 사람 개입 복구와 함께
 - `q`: 지금까지 모은 걸 저장하고 종료
 
 ## 실행
-    python collect_carry_teleop_detour.py --out data/grasp_carry_demos_teleop_detour.pkl
+    python -m grasp_carry.scripts.collect.collect_carry_teleop_detour \
+        --diff-ckpt checkpoints/grasp_carry_diff100_v5/predictor.pkl \
+        --out data/grasp_carry_demos_teleop_detour.pkl
 
 `collect_carry_demos.py`와 **동일 스키마**로 저장한다(observation/action/
 time_to_success/episode_id/is_success/meta) — `is_detour` 대신 사람이 조작한
@@ -39,6 +43,8 @@ import pickle
 import sys
 
 import numpy as np
+import jax
+import jax.numpy as jnp
 import matplotlib
 # 인터랙티브 GUI 백엔드를 명시적으로 골라야 한다 — matplotlib.pyplot을 그냥
 # import만 하면 환경에 따라(GUI 툴킷이 안 깔려 있는 등) 조용히 비인터랙티브
@@ -48,6 +54,7 @@ import matplotlib
 # 있어서(2026-08-24 실측 — try/except로 걸러지지 않고 그냥 조용히 넘어감),
 # 후보마다 실제로 캔버스를 하나 만들어봐서 확실히 되는지까지 확인한다.
 _INTERACTIVE_OK = False
+_INTERACTIVE_BACKEND = None
 for _backend in ('TkAgg', 'Qt5Agg', 'QtAgg', 'MacOSX'):
   try:
     matplotlib.use(_backend, force=True)
@@ -55,6 +62,7 @@ for _backend in ('TkAgg', 'Qt5Agg', 'QtAgg', 'MacOSX'):
     _test_fig = plt.figure()
     plt.close(_test_fig)
     _INTERACTIVE_OK = True
+    _INTERACTIVE_BACKEND = _backend
     break
   except Exception:
     continue
@@ -73,11 +81,17 @@ if not _INTERACTIVE_OK:
 
 from grasp_carry.config import CarryConfig
 from grasp_carry.env import FRAME_FIELDS, GraspCarry2D
-from grasp_carry.policy import ScriptedCarryPolicy, _CEILING_Y
+from grasp_carry.scripts.analyze.rollout_carry_diff_stats import load_diff_policy
 from grasp_carry.scripts.record.record_carry import draw_env
+from grasp_carry.train_carry_predictor import concat_obs
 
-_WAYPOINT_REACH_TOL = 5.0  # mm — 목표에 이 정도 가까우면 "도착"으로 보고 바로 다음 경유지
-_WANDER_SPEED_MULT = 2.5   # 방황 중 PD 리드 배수(명목 속도의 몇 배) — 실측 근거는 아래 참고
+# record_carry.py는 자기 자신은 헤드리스 mp4 렌더링용이라 모듈 최상단에서
+# matplotlib.use('Agg')를 무조건 호출한다 — 그 import(draw_env를 쓰려고 필요)가
+# 위에서 애써 찾은 인터랙티브 백엔드를 조용히 Agg로 덮어써버린다(2026-08-30 실측:
+# plt.show(block=False)/plt.pause()가 "FigureCanvasAgg is non-interactive" 경고만
+# 내고 창이 안 뜨며, 마우스 이벤트가 전혀 안 들어와 사람 모드가 사실상 무력화됨).
+# 확인된 인터랙티브 백엔드를 다시 강제한다.
+matplotlib.use(_INTERACTIVE_BACKEND, force=True)
 
 
 class MouseState:
@@ -105,43 +119,45 @@ def make_mouse_handlers(ms: MouseState):
   return on_move, on_press, on_release
 
 
-def _sample_waypoint(env: GraspCarry2D, rng: np.random.Generator) -> tuple:
-  """작업공간 아무 데나 — 박스 벽/rim 안전 높이 같은 건 신경 안 쓴다(의도).
-  env.step의 하드스톱이 물리적으로 불가능한 목표는 어차피 막아주므로 폭주는
-  안 하지만, 박스 벽 근처를 스칠 만큼 낮게도 뽑힐 수 있어 실제로 놓치는 일이
-  생긴다 — 그게 이 함수의 목적이다."""
-  cfg = env.cfg
-  half = cfg.gripper_outer_width / 2.0
-  tx = float(rng.uniform(half, cfg.world_width - half))
-  ty = float(rng.uniform(_CEILING_Y, cfg.floor_y - 10.0))
-  return tx, ty
+def make_dp_infer(ck: dict, nets, normalize_obs, unnormalize_action,
+                  horizon: int, act_dim: int, seed: int):
+  """관측 -> (horizon, act_dim) 언정규화 액션 청크를 내는 클로저.
+
+  호출마다 역확산으로 새 청크 전체를 샘플링한다 — 그중 몇 스텝을 실행할지는
+  호출부(`collect_one_episode`)가 `exec_horizon`으로 정한다
+  (`collect_carry_bc_rollouts.py`와 동일한 receding-horizon 실행 방식).
+  """
+  _sample = jax.jit(lambda p, c, k: nets.sample_chunk(p, c, k))
+  key = [jax.random.PRNGKey(seed)]
+
+  def infer(obs):
+    o = {'frame': np.asarray(obs, np.float32)[None]}
+    c = np.asarray(concat_obs(normalize_obs(o)))
+    key[0], sub = jax.random.split(key[0])
+    chunk_n = np.asarray(_sample(ck['params'], jnp.asarray(c), sub)
+                         )[0].reshape(horizon, act_dim)
+    return np.asarray(unnormalize_action(chunk_n), np.float32)
+
+  return infer
 
 
-def collect_one_episode(env: GraspCarry2D, cfg: CarryConfig, rng: np.random.Generator,
-                        seed: int, ms: MouseState, fig, ax,
-                        waypoint_min_steps: int, waypoint_max_steps: int,
+def collect_one_episode(env: GraspCarry2D, cfg: CarryConfig, seed: int,
+                        ms: MouseState, fig, ax, dp_infer, exec_horizon: int,
                         pause_dt: float, discard: dict, toggle: dict):
-  """에피소드 하나를 자동+사람 개입 섞어서 굴린다.
+  """에피소드 하나를 자동(DP 롤아웃)+사람 개입 섞어서 굴린다.
 
   `discard['flag']`가 True가 되면(‘r’ 키) 즉시 중단하고 (None, None, None,
   'discarded')를 반환한다. `toggle['flag']`가 True가 될 때마다(‘h’ 키)
-  자동<->사람 모드가 즉시 뒤집힌다 — 놓쳤을 때의 자동 전환과 별개로 아무 때나
-  직접 넘나들 수 있다.
+  자동<->사람 모드가 즉시 뒤집힌다 — 자동 전환은 없고 오직 이 수동 토글로만
+  바뀐다(2026-08-31, 사용자 결정). 모드가 바뀌면 그때까지 남아있던 DP 청크는
+  버린다 — 사람이 상태를 바꿔놨을 수 있으므로 복귀 시 그 시점 관측으로 다시
+  예측해야 한다.
   """
   obs, info = env.reset(seed=seed)
-  policy = ScriptedCarryPolicy(config=cfg, allow_regrasp=True)
-  policy.reset()
 
   obs_l, act_l, human_l = [obs], [], []
-  # 2단계: auto_grasp(접근/파지, 여기까진 무작위로 만들 이유가 없다) ->
-  # auto_wander(완전 무작위 경유지를 도착할 때마다/시간 초과 시마다 계속
-  # 새로 뽑아 끝없이 방황 — 목적지로 스스로 마무리하는 단계가 없다, 사람이
-  # `h`로 넘겨받아 직접 끝내거나 다시 자동으로 돌려보낸다).
-  mode = 'auto_grasp'
-  waypoint = None
-  waypoint_ttl = 0
-  was_held = False
-  not_held_run = 0   # env._track_drop()과 동일 기준(2스텝 연속) — 접촉 깜빡임 오탐 방지
+  mode = 'auto'  # 'auto'(DP가 접근~놓기까지 전체 수행) 또는 'human'
+  chunk, chunk_i = None, 0
 
   terminated = truncated = False
   info_last = info
@@ -151,38 +167,16 @@ def collect_one_episode(env: GraspCarry2D, cfg: CarryConfig, rng: np.random.Gene
 
     if toggle['flag']:
       toggle['flag'] = False
-      mode = 'human' if mode != 'human' else 'auto_wander'
-      if mode == 'auto_wander':
-        waypoint = None  # 자동으로 복귀하면 그 자리에서 새 경유지를 뽑는다
+      mode = 'human' if mode != 'human' else 'auto'
+      chunk = None
       print(f'  >> 수동 전환: {mode}')
 
-    if mode == 'auto_grasp':
-      a = policy(env)
-      if policy.phase == 'carry':
-        mode = 'auto_wander'
-    elif mode == 'auto_wander':
-      if waypoint is None:
-        waypoint = _sample_waypoint(env, rng)
-        waypoint_ttl = int(rng.integers(waypoint_min_steps, waypoint_max_steps + 1))
-      # 목표를 그대로 즉시 명령하면(리드 제한 없이) PD 힘이 순간적으로 커져
-      # 화면상 "순간이동"처럼 보일 만큼 빨라진다(사용자 지적, 2026-08-24) —
-      # 그렇다고 정책의 명목 속도(policy.speed, 1배)로 완만히 다가가면 이번엔
-      # 거의 절대 안 떨어뜨려서(0/15 실측) 방황의 의미가 없다. 절충으로
-      # `_goto`(PD로 매 스텝 조금씩만 다가감, 여전히 물리적으로 연속적인
-      # 움직임)를 쓰되 리드를 명목 속도의 배수로 키운다 — 실측(가짜 마우스로
-      # 10회씩): 1.0x=0/10, 1.5x=2/10, 2.0x=3/10, 2.5x=4/10, 3.0x=5/10,
-      # 4.0x=5/10(포화). 2.5배를 기본값으로 삼는다 — 대략 40%가 실제로
-      # 놓치는 정도면 "위험하지만 매번은 아닌" 느낌에 맞는다고 판단.
-      lead = policy.speed * _WANDER_SPEED_MULT
-      vlead = policy._lift_lead * _WANDER_SPEED_MULT
-      a = policy._goto(env, waypoint[0], waypoint[1], lead, 1.0, vlead=vlead)
-      policy._step_i += 1  # __call__을 안 거치므로 내부 스텝 카운터를 직접 맞춘다
-      waypoint_ttl -= 1
-      ex, ey = float(env.gripper.pose[0]), float(env.gripper.pose[1])
-      reached = (abs(ex - waypoint[0]) < _WAYPOINT_REACH_TOL
-                and abs(ey - waypoint[1]) < _WAYPOINT_REACH_TOL)
-      if reached or waypoint_ttl <= 0:
-        waypoint = None   # 다음 스텝에 새로 뽑는다(도착이든 시간 초과든 바로 다음으로)
+    if mode == 'auto':
+      if chunk is None or chunk_i >= exec_horizon:
+        chunk = dp_infer(obs)
+        chunk_i = 0
+      a = chunk[chunk_i]
+      chunk_i += 1
     else:  # 'human'
       tx = ms.x if ms.x is not None else float(env.gripper.pose[0])
       ty = ms.y if ms.y is not None else float(env.gripper.pose[1])
@@ -195,25 +189,9 @@ def collect_one_episode(env: GraspCarry2D, cfg: CarryConfig, rng: np.random.Gene
     obs, _, terminated, truncated, info = env.step(a)
     info_last = info
 
-    held_now = env.is_held()
-    if held_now:
-      not_held_run = 0
-    elif was_held or not_held_run > 0:
-      # was_held(방금까지 잡고 있었음) 또는 이미 연속 카운트 중이면 이어서 센다
-      # — env.py _track_drop()과 동일하게 접촉 깜빡임(1스텝) 오탐을 거른다.
-      not_held_run += 1
-    if mode == 'auto_wander' and not_held_run >= 2:
-      mode = 'human'
-      print('  !! 놓침 -- 마우스로 이어받으세요 (누르고 있으면 쥠, h로 자동 복귀) !!')
-    was_held = held_now
-
     draw_env(ax, env, action=a)
-    tag = {'auto_grasp': '자동(접근/파지)', 'auto_wander': '자동(무작위 방황)',
-          'human': '사람 개입 중'}[mode]
+    tag = {'auto': 'auto(DP rollout)', 'human': 'human control'}[mode]
     ax.set_title(ax.get_title() + f'   [{tag}]', fontsize=9)
-    if mode == 'auto_wander' and waypoint is not None:
-      ax.plot(waypoint[0], waypoint[1], marker='*', markersize=16,
-              color='magenta', markeredgecolor='k', zorder=10)
     fig.canvas.draw_idle()
     plt.pause(pause_dt)
 
@@ -229,11 +207,12 @@ def collect_one_episode(env: GraspCarry2D, cfg: CarryConfig, rng: np.random.Gene
 
 def main():
   ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+  ap.add_argument('--diff-ckpt', default='checkpoints/grasp_carry_diff100_v5/predictor.pkl',
+                  help='굴릴 학습된 diffusion BC 정책 체크포인트')
+  ap.add_argument('--dp-seed', type=int, default=1234,
+                  help='DP 역확산 샘플링 PRNG 시드')
   ap.add_argument('--out', default='data/grasp_carry_demos_teleop_detour.pkl')
   ap.add_argument('--seed0', type=int, default=800000)
-  ap.add_argument('--explore-seed', type=int, default=0)
-  ap.add_argument('--waypoint-min-steps', type=int, default=10)
-  ap.add_argument('--waypoint-max-steps', type=int, default=25)
   ap.add_argument('--pause-dt', type=float, default=0.03,
                   help='프레임 사이 대기(초) — 너무 빠르면 마우스로 못 쫓아감')
   ap.add_argument('--autosave-every', type=int, default=5,
@@ -242,7 +221,15 @@ def main():
 
   cfg = CarryConfig()
   env = GraspCarry2D(cfg)
-  rng = np.random.default_rng(args.explore_seed)
+
+  ck, nets, normalize_obs, normalize_action, unnormalize_action = load_diff_policy(args.diff_ckpt)
+  m = ck['meta']
+  horizon = int(m.get('horizon', 1))
+  exec_horizon = int(m.get('exec_horizon', horizon))
+  act_dim = int(m.get('act_dim', len(ck['norm_stats']['act_mean'])))
+  dp_infer = make_dp_infer(ck, nets, normalize_obs, unnormalize_action,
+                           horizon, act_dim, args.dp_seed)
+  print(f'[DP 체크포인트] {args.diff_ckpt}  (horizon={horizon}, exec_horizon={exec_horizon})')
 
   print(f'[matplotlib 백엔드] {matplotlib.get_backend()} '
         f'(창이 안 뜨면 이 백엔드용 GUI 툴킷이 안 깔려있는 것 — '
@@ -250,7 +237,7 @@ def main():
   plt.ion()
   fig, ax = plt.subplots(figsize=(6, 6), dpi=100)
   try:
-    fig.canvas.manager.set_window_title('GraspCarry2D 비최적 데모 수집')
+    fig.canvas.manager.set_window_title('GraspCarry2D DP rollout + human recovery')
   except Exception:
     pass
   plt.show(block=False)   # ion()+pause()만으로는 일부 환경에서 창이 안 떠서 명시적으로 띄운다
@@ -290,8 +277,9 @@ def main():
         'is_success': (np.concatenate(succ_all) if succ_all else np.zeros((0,), dtype=bool)),
         'is_human': (np.concatenate(human_all) if human_all else np.zeros((0,), dtype=bool)),
         'meta': {
-            'source': 'collect_carry_teleop_detour.py: auto random-waypoint carry '
-                      '+ human mouse recovery on drop',
+            'source': 'collect_carry_teleop_detour.py: DP (diffusion BC) policy rollout '
+                      '+ manual (h-key) human mouse takeover',
+            'diff_ckpt': args.diff_ckpt,
             'frame_fields': list(FRAME_FIELDS),
             'obs_history': cfg.obs_history,
             'action_fields': ('x', 'y', 'theta', 'grip'),
@@ -303,8 +291,6 @@ def main():
             'seed0': args.seed0,
             'control_hz': cfg.control_hz,
             'max_steps': cfg.max_steps,
-            'waypoint_min_steps': args.waypoint_min_steps,
-            'waypoint_max_steps': args.waypoint_max_steps,
         },
     }
     os.makedirs(os.path.dirname(args.out) or '.', exist_ok=True)
@@ -313,7 +299,6 @@ def main():
     tag = '(최종)' if final else '(중간저장)'
     print(f'저장{tag}: 성공 {kept}개, {len(data["time_to_success"])}스텝 -> {args.out}')
 
-  print(__doc__)
   print(f'시작 (seed0={args.seed0}). 창에서 h=자동/사람 전환, r=버리고 재시작, q=저장 후 종료.')
 
   try:
@@ -322,8 +307,8 @@ def main():
       toggle['flag'] = False
       print(f'--- 에피소드 seed={seed} ---')
       obs_l, act_l, human_l, outcome = collect_one_episode(
-          env, cfg, rng, seed, ms, fig, ax,
-          args.waypoint_min_steps, args.waypoint_max_steps, args.pause_dt, discard, toggle)
+          env, cfg, seed, ms, fig, ax, dp_infer, exec_horizon,
+          args.pause_dt, discard, toggle)
       seed += 1
 
       if outcome == 'discarded':
