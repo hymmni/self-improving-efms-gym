@@ -5,7 +5,7 @@ r"""AI-E 보상으로 학습한 정책 vs AI-R 보상으로 학습한 정책 —
 `record_carry.py`의 `draw_env`를 그대로 재사용한다(그리퍼·블록·박스 기하를
 렌더러에서 다시 계산하지 않는다는 원칙 유지).
 
-    python record_carry_actor.py --seeds 3 7 11 \
+    python -m grasp_carry.scripts.record.record_carry_actor --seeds 3 7 11 \
         --out results/videos/grasp_carry_actor_compare.mp4
 """
 

@@ -17,7 +17,7 @@ False->True로 바뀌는 횟수(=파지 시도 횟수)로 프록시한다. 파�
 경계값을 재사용).
 
 실행:
-    python rollout_carry_diff_stats.py --episodes 300
+    python -m grasp_carry.scripts.analyze.rollout_carry_diff_stats --episodes 300
 """
 
 import argparse

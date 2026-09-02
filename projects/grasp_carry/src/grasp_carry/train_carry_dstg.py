@@ -45,9 +45,9 @@ r"""GraspCarry2D 관측-only STG 예측기 d(o,g) := E[steps-to-go | o, g] (phas
 데이터: `data/grasp_carry_demos_v3.pkl` (`collect_carry_demos.py --keep-failures`)
 
 실행:
-  python -m src.train_carry_dstg --data data/grasp_carry_demos_v3.pkl \
+  python -m grasp_carry.train_carry_dstg --data data/grasp_carry_demos_v3.pkl \
       --out checkpoints/grasp_carry_dstg_succ/predictor.pkl
-  python -m src.train_carry_dstg --data data/grasp_carry_demos_v3.pkl \
+  python -m grasp_carry.train_carry_dstg --data data/grasp_carry_demos_v3.pkl \
       --include-failures --out checkpoints/grasp_carry_dstg_fail/predictor.pkl
 """
 

@@ -6,7 +6,7 @@ r"""`src/train_carry_qstg.py` 체크포인트로 조건 A/B를 직접 재현.
 넣어 예측된 P(성공)·E[스텝|성공]·q0.8[스텝|성공]을 직접 비교한다 — "모델이
 이 위험 구조를 실제로 배웠는가"에 대한 답이다.
 
-    python probe_carry_qstg.py --ckpt checkpoints/grasp_carry_qstg/predictor.pkl \
+    python -m grasp_carry.scripts.analyze.probe_carry_qstg --ckpt checkpoints/grasp_carry_qstg/predictor.pkl \
         --data data/grasp_carry_demos_v3.pkl
 
 `run_probe()`는 `verify_carry_qstg_condb.py`가 재사용한다(조건 B로 걸린

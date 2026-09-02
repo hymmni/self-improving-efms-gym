@@ -12,7 +12,7 @@ r"""Phase 4 step 4 — 대조군 + 3개 SI arm을 같은 시드 블록으로 평
 디퓨전 정책이 뽑은 액션을 그대로 쓴다 — SI 학습 자체의 효과만 보기
 위해서다.
 
-    python eval_carry_si.py --episodes 200 --seed0 900000
+    python -m grasp_carry.scripts.analyze.eval_carry_si --episodes 200 --seed0 900000
 """
 
 import argparse

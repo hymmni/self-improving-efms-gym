@@ -33,7 +33,7 @@ collect_rollouts`, `collect_carry_demos.py`의 기본값). 그러면 그 예측�
 참고군으로 물리식(`_speed_cap`의 회전 저항 유도식, 은닉 물성의 보수적
 분위수를 씀)도 같이 돌린다 — 학습 없이 손으로 유도한 안전 상한이다.
 
-    python compare_carry_selectors.py --episodes 200
+    python -m grasp_carry.scripts.analyze.compare_carry_selectors --episodes 200
 """
 
 import argparse

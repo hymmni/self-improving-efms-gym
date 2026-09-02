@@ -21,8 +21,8 @@ freeze a separate Stage 1 checkpoint for reward computation and success
 detection").
 
 실행:
-  python -m src.carry_stg_reward --ckpt checkpoints/grasp_carry_dstg_succ/predictor.pkl
-  python -m src.carry_stg_reward --ckpt checkpoints/grasp_carry_dstg_fail/predictor.pkl \
+  python -m grasp_carry.carry_stg_reward --ckpt checkpoints/grasp_carry_dstg_succ/predictor.pkl
+  python -m grasp_carry.carry_stg_reward --ckpt checkpoints/grasp_carry_dstg_fail/predictor.pkl \
       --statistic cvar --episodes 50
 """
 

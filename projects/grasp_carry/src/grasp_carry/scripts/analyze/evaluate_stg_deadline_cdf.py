@@ -17,7 +17,7 @@ A가 이미 recall 0.364에서 잡은 4건은 B, C도 당연히 잡을 것(둘 �
 그 대가로 오탐(성공인데 포기판정)이 몇 건 새로 생기는지**다.
 
 실행:
-    python evaluate_stg_deadline_cdf.py --ckpt checkpoints/grasp_carry_dstg_deadline_v5rollout/predictor.pkl
+    python -m grasp_carry.scripts.analyze.evaluate_stg_deadline_cdf --ckpt checkpoints/grasp_carry_dstg_deadline_v5rollout/predictor.pkl
 """
 
 import argparse

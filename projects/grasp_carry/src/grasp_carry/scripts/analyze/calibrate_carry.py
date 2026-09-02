@@ -1,7 +1,7 @@
 r"""`GraspCarry2D` 캘리브레이션 — 위험 민감 구조가 실제로 성립하는지 검증한다
 (phase 3, step 5).
 
-    python calibrate_carry.py [--episodes N] [--seed0 N] [--speeds S...]
+    python -m grasp_carry.scripts.analyze.calibrate_carry [--episodes N] [--seed0 N] [--speeds S...]
 
 이 환경은 steps-to-go(STG) 예측 **분포의 분산·분위수**가 기댓값 이상의 정보를
 주는지 검증하려고 만들었다. 그러려면 아래 구조가 물리적으로 성립해야 한다.

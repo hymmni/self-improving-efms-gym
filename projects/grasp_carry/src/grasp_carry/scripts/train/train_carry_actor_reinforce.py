@@ -45,7 +45,7 @@ REINFORCE는 `log p(action)`이 있어야 한다. 지금까지 액터는 결정�
 z 자체의 분포에는 야코비안 보정이 필요 없다), 탐색(exploration)은
 `--explore-std`로 z의 표준편차를 정해서 만든다.
 
-    python train_carry_actor_reinforce.py \
+    python -m grasp_carry.scripts.train.train_carry_actor_reinforce \
         --diff-ckpt checkpoints/grasp_carry_diff100/predictor.pkl \
         --out checkpoints/grasp_carry_actor_reinforce/actor.pkl
 """

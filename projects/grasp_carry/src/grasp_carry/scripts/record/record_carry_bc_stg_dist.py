@@ -6,7 +6,7 @@ r"""학습된(스크립트 아님) diffusion BC 정책의 **실패** 롤아웃�
 빨간 세로선은 데드라인 B(=reset_cost+T̂, `grasp_carry_dstg_deadline_v5rollout`이
 실제 실패 롤아웃으로 학습한 값)다.
 
-    python record_carry_bc_stg_dist.py --seed 900003 \
+    python -m grasp_carry.scripts.record.record_carry_bc_stg_dist --seed 900003 \
         --out results/videos/grasp_carry_bc_fail_seed900003.mp4
 """
 

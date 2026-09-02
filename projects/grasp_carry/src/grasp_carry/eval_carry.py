@@ -1,6 +1,6 @@
 r"""`GraspCarry2D` + `ScriptedCarryPolicy` 평가 CLI (phase 3, step 3).
 
-    python -m src.eval_carry --episodes 50 [--speed S] [--no-regrasp] [--seed0 N]
+    python -m grasp_carry.eval_carry --episodes 50 [--speed S] [--no-regrasp] [--seed0 N]
 
 출력: 성공률, 성공 에피소드의 스텝 통계(평균/중앙값/q0.8), 실패 원인 분류
 (넘어짐/타임아웃/기타), 재파지 비율·평균 낙하 횟수·평균 파지 접촉 길이.

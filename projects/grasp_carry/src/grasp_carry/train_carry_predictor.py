@@ -30,7 +30,7 @@ horizon 방식으로 롤아웃한다(square_assembly/3D 태스크와 같은 패�
 이 스크립트는 자체 정규화기로 학습·평가·저장을 전부 자기완결적으로 한다.
 
 실행:
-  python -m src.train_carry_predictor --data data/grasp_carry_demos_v2.pkl
+  python -m grasp_carry.train_carry_predictor --data data/grasp_carry_demos_v2.pkl
 """
 
 import argparse

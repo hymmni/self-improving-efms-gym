@@ -18,7 +18,7 @@ AI-E(성공 데모만 학습)와 AI-R(실패 포함 학습)을 완전히 같은 
 정책에 꽂아 비교한다. `--no-guidance`면 STG 평가 없이 디퓨전 정책이 뽑은
 첫 후보를 그냥 쓴다(순수 BC 베이스라인).
 
-    python run_bc_stg_guided.py --episodes 200
+    python -m grasp_carry.scripts.analyze.run_bc_stg_guided --episodes 200
 """
 
 import argparse

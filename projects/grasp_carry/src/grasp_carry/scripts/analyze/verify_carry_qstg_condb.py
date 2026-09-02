@@ -12,7 +12,7 @@ r"""조건 B로 걸린 예측을 실제 물리로 재검증한다.
 `calibrate_carry.py`가 원래 썼던 것과 같은 비교 단위(전체 롤아웃, 고정
 속도)라 조건 A/B 정의와 맞는다.
 
-    python verify_carry_qstg_condb.py
+    python -m grasp_carry.scripts.analyze.verify_carry_qstg_condb
 """
 
 import argparse

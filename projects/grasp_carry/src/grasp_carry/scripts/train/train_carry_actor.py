@@ -9,7 +9,7 @@ r"""AI-E/AI-R를 보상으로 삼아 "속도를 고르는" 정책을 진짜로 �
 시뮬레이터로 성능을 채점한다 — "정답을 매번 알 수 없어 학습된 보상 모델에
 의존해야 하는 상황"을 흉내낸다.
 
-    python train_carry_actor.py --qstg-ckpt checkpoints/grasp_carry_qstg/predictor.pkl \
+    python -m grasp_carry.scripts.train.train_carry_actor --qstg-ckpt checkpoints/grasp_carry_qstg/predictor.pkl \
         --out checkpoints/grasp_carry_actor_risk/actor.pkl
 """
 

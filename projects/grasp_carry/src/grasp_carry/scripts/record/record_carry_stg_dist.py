@@ -9,7 +9,7 @@ r"""실패하는 롤아웃에 STG 카테고리컬 분포를 나란히 붙여서 
 
 빨간 세로선은 데드라인 B(=reset_cost+T̂, 이 예측기가 실패 판정 순간에 학습한 값)다.
 
-    python record_carry_stg_dist.py --seed 52 \
+    python -m grasp_carry.scripts.record.record_carry_stg_dist --seed 52 \
         --out results/videos/grasp_carry_stg_dist_seed52.mp4
 """
 

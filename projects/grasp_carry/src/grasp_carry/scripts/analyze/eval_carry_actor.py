@@ -4,7 +4,7 @@ r"""`train_carry_actor.py`로 학습한 정책(AI-E/AI-R 보상)을 실제 시�
 **진짜 물리**에 굴려서, 예측기(보상 모델)를 거쳐 학습된 정책이 실제로 얼마나
 안전하고 효율적인지 확인한다.
 
-    python eval_carry_actor.py --episodes 200
+    python -m grasp_carry.scripts.analyze.eval_carry_actor --episodes 200
 """
 
 import argparse

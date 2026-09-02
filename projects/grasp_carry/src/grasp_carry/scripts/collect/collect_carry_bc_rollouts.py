@@ -13,7 +13,7 @@ Stage-2 스타일 롤아웃 데이터를 `collect_carry_demos.py`와 동일 포�
 "인위적으로 만든" 게 아니라 정책이 실제로 저지른 것이다(SI-EFM Stage-2와 동일).
 
 실행:
-    python collect_carry_bc_rollouts.py \
+    python -m grasp_carry.scripts.collect.collect_carry_bc_rollouts \
         --diff-ckpt checkpoints/grasp_carry_diff100_v5/predictor.pkl \
         --episodes 600 --seed0 900000 \
         --out data/grasp_carry_bc_v5_rollouts.pkl

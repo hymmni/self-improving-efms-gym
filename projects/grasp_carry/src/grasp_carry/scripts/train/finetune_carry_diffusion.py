@@ -14,7 +14,7 @@ critic의 그래디언트를 역전파할 수 있다 — DDPG의 actor 업데이
 동작에서 멀어지며 무너질 수 있다(보상 해킹). 원본(고정) 정책이 같은
 노이즈로 냈을 액션과의 L2 거리를 벌점으로 같이 준다.
 
-    python finetune_carry_diffusion.py \
+    python -m grasp_carry.scripts.train.finetune_carry_diffusion \
         --diff-ckpt checkpoints/grasp_carry_diff100/predictor.pkl \
         --qstg-ckpt checkpoints/grasp_carry_qstg/predictor.pkl \
         --out checkpoints/grasp_carry_diff100_finetuned/predictor.pkl

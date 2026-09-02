@@ -23,7 +23,7 @@ step 0)가 역확산 100단계 각각을 가우시안 전이로 보고 단계별
 (로그에만 쓴다) — 논문 핵심 주장("외부 감독 없는 자기개선")이 걸려 있다.
 
 실행:
-  python train_carry_si.py \
+  python -m grasp_carry.scripts.train.train_carry_si \
       --policy-ckpt checkpoints/grasp_carry_diff100/predictor.pkl \
       --d-ckpt checkpoints/grasp_carry_dstg_succ/predictor.pkl \
       --statistic mean \

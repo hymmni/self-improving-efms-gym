@@ -10,7 +10,7 @@ B = reset_cost + T_hat. T_hat은 이 롤아웃 자체의 성공 에피소드 길
 해야 의미가 있어서 v3 demo가 아니라 이 정책의 롤아웃 길이를 쓴다.
 
 실행:
-    python analyze_mu_jump_bimodal.py --diff-ckpt checkpoints/grasp_carry_diff100_v5/predictor.pkl
+    python -m grasp_carry.scripts.analyze.analyze_mu_jump_bimodal --diff-ckpt checkpoints/grasp_carry_diff100_v5/predictor.pkl
 """
 
 import argparse

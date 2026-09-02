@@ -14,7 +14,7 @@ held-out(val) 에피소드는 예측기 학습 때와 동일한 분할(`_val_epi
 재현해서 쓴다 — 학습에 쓴 transition에서 재면 낙관적으로 나온다.
 
 실행:
-    python evaluate_stg_deadline.py --ckpt checkpoints/grasp_carry_dstg_deadline_v5rollout/predictor.pkl
+    python -m grasp_carry.scripts.analyze.evaluate_stg_deadline --ckpt checkpoints/grasp_carry_dstg_deadline_v5rollout/predictor.pkl
 """
 
 import argparse

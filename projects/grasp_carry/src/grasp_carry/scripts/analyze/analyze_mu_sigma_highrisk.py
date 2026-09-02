@@ -22,8 +22,8 @@ theory 기반 "포기(조기 리셋) 판정" — μ(o) > B(=T_reset+T̂)면 포�
 재현 — seed는 dstg_deadline 학습에 쓴 기본값 0).
 
 실행:
-    python analyze_mu_sigma_highrisk.py
-    python analyze_mu_sigma_highrisk.py --top-pct 10   # 고위험 정의를 상위 10%로
+    python -m grasp_carry.scripts.analyze.analyze_mu_sigma_highrisk
+    python -m grasp_carry.scripts.analyze.analyze_mu_sigma_highrisk --top-pct 10   # 고위험 정의를 상위 10%로
 """
 
 import argparse

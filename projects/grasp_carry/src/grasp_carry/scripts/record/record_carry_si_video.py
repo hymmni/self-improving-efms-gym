@@ -4,7 +4,7 @@ r"""DDPO-SF로 자기개선된(또는 순수 BC) diffusion 정책을 실제로 �
 (DDPO-SF 체크포인트도 원본 BC 체크포인트와 같은 payload 구조라 그대로 재사용 가능,
 train_carry_si.py::_save_ckpt가 'params'만 바꿔치기하고 나머지는 복사하기 때문).
 
-    python record_carry_si_video.py --seed 3 \
+    python -m grasp_carry.scripts.record.record_carry_si_video --seed 3 \
         --diff-ckpt checkpoints/grasp_carry_si_v5n50_successonly/predictor_best.pkl \
         --out results/videos/si_successonly_seed3.mp4
 """

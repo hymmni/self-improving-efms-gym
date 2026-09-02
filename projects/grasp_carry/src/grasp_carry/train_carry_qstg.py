@@ -17,7 +17,7 @@ r"""GraspCarry2D 액션-조건부 STG 예측기 — 조건 A/B를 예측기로 �
 데이터: `collect_carry_demos.py --keep-failures` → `data/grasp_carry_demos_v3.pkl`
 
 실행:
-  python -m src.train_carry_qstg --data data/grasp_carry_demos_v3.pkl
+  python -m grasp_carry.train_carry_qstg --data data/grasp_carry_demos_v3.pkl
 """
 
 import argparse

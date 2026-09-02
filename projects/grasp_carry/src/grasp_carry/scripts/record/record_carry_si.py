@@ -14,7 +14,7 @@ r"""DDPO 적용 전(control) vs 후(arm A) 디퓨전 정책 — 같은 시드로
 저장하는 건 `--seeds`로 고른 것만). 이 재현성 함정은 2026-08-07에 실측으로 발견했다 —
 `--seeds`만 따로 호출한 첫 시도는 스캔 때와 다른 결과가 나왔다.
 
-    python record_carry_si.py --seeds 900004 900006 900022 900039 \
+    python -m grasp_carry.scripts.record.record_carry_si --seeds 900004 900006 900022 900039 \
         --out results/videos/grasp_carry_si_compare.mp4
 """
 
