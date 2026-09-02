@@ -7,7 +7,7 @@ r"""GraspCarry2D 롤아웃 영상 녹화 (phase 3, step 4).
 도구**다. 그리퍼 다각형·블록 정점·박스 기하는 전부 `env`/`env.gripper`가
 노출하는 값을 그대로 쓰고, 렌더러에서 다시 계산하지 않는다.
 
-  python record_carry.py --seeds 3 7 11 --speeds 30 60 \
+  python -m grasp_carry.scripts.record.record_carry --seeds 3 7 11 --speeds 30 60 \
       --out results/videos/grasp_carry.mp4
 """
 import argparse
@@ -22,7 +22,6 @@ from matplotlib.patches import Polygon
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import imageio.v2 as imageio
 
-plt.rcParams['font.family'] = ['Noto Sans CJK JP', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
 from grasp_carry.config import CarryConfig
@@ -108,16 +107,16 @@ def draw_env(ax, env, action=None, side_label='', block_color='tab:blue',
                        edgecolor='k', lw=1.2, alpha=0.9, zorder=3))
 
   if info['outcome'] == 'success':
-    state = '성공'
+    state = 'success'
   elif info['outcome'] == 'tipped':
-    state = '넘어짐'
+    state = 'tipped'
   elif held:
-    state = '물림'
+    state = 'held'
   elif closing:
-    state = '닫힘'
+    state = 'closing'
   else:
-    state = '열림'
-  ax.set_title(f"{side_label}step {info['steps']}  낙하 {info['n_drops']}회  "
+    state = 'open'
+  ax.set_title(f"{side_label}step {info['steps']}  drops {info['n_drops']}  "
                f"[{state}]", fontsize=9)
 
 
@@ -189,9 +188,9 @@ def run_pair(seeds, speeds, cfg, fps, out, explore_range=None):
                 base_offset=base_offset[i])
       info_a = env_a._info()
       fig.suptitle(
-          f"[은닉] 질량={info_a['mass']:.2f}kg 마찰={info_a['friction']:.2f}"
-          f"   |   [관측 가능] 블록 {env_a.block_w:.0f}x{env_a.block_h:.0f}mm"
-          f"  소스 내폭 {env_a.src_box.inner_width:.0f}mm   (seed {seed})",
+          f"[hidden] mass={info_a['mass']:.2f}kg friction={info_a['friction']:.2f}"
+          f"   |   [observable] block {env_a.block_w:.0f}x{env_a.block_h:.0f}mm"
+          f"  src inner-width {env_a.src_box.inner_width:.0f}mm   (seed {seed})",
           fontsize=10)
       fig.tight_layout(rect=[0, 0, 1, 0.90])
       canvas = FigureCanvasAgg(fig)
