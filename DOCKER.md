@@ -22,6 +22,8 @@ VS Code에 [Dev Containers 확장](https://marketplace.visualstudio.com/items?it
 
 컨테이너 안에 Node.js + Claude Code CLI도 같이 설치됩니다(`postCreateCommand`). VS Code 통합 터미널(컨테이너 안 터미널)에서 바로 `claude`를 실행하면, 코드 편집·python 실행이 전부 같은 셸에서 이뤄져 매 명령을 `docker compose exec`로 감쌀 필요가 없습니다. 로그인 정보는 호스트의 `~/.claude`와 `~/.claude.json`을 그대로 bind-mount해서 쓰므로(`docker-compose.yml`) — 자격증명은 `~/.claude/.credentials.json`에, 온보딩/프로젝트 신뢰 상태는 `~/.claude.json`에 나뉘어 있어 둘 다 마운트해야 함 — 호스트에서 이미 로그인돼 있으면 컨테이너 안에서 별도 로그인이 필요 없고, `--rm`으로 컨테이너가 지워지거나 이미지를 재빌드해도 로그인이 유지됩니다. 호스트에 `~/.claude`가 아직 없으면(Claude Code를 host에서 써본 적 없으면) 빈 폴더가 자동 생성되고 컨테이너 안에서 최초 1회 로그인하면 됩니다. 단 `~/.claude.json`은 파일 하나를 바로 마운트하는 거라, 호스트에 그 파일이 아예 없는 상태(=host에서 Claude Code를 한 번도 실행 안 한 상태)로 컨테이너를 띄우면 Docker가 그 경로에 빈 디렉터리를 만들어버려 컨테이너 안 Claude Code가 깨질 수 있음 — 이 경우 호스트에서 `claude`를 한 번 실행해 파일을 만든 뒤 컨테이너를 다시 띄우면 됨.
 
+이 mount는 컨테이너 경로와 호스트 경로가 완전히 동일해야 합니다(`${HOME}/.claude`) — Claude Code 내부 설정(플러그인/마켓플레이스 등)이 절대경로를 그대로 저장하기 때문입니다. 그래서 VS Code Dev Container는 root가 아니라 `dev`라는 non-root 사용자로 실행됩니다(`common-utils` feature + `updateRemoteUserUID: true`로 호스트 UID/GID를 자동으로 맞춤). root로 실행하면 컨테이너 안에서 새로 생기는 설정/세션 파일이 전부 root 소유로 호스트에 그대로 남아 `~/.claude`를 오염시키기 때문에 반드시 non-root여야 합니다. (`docker compose run`으로 직접 띄우는 학습용 컨테이너는 이 영향 없이 그대로 root로 동작합니다 — `dev` 사용자 전환은 devcontainer 경로에만 적용됨.)
+
 ## 0. 최초 1회 준비
 
 ```bash

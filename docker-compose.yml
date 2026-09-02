@@ -8,11 +8,12 @@ services:
     volumes:
       - .:/workspace
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${HOME}/.claude:/root/.claude
-      - ${HOME}/.claude.json:/root/.claude.json
+      - ${HOME}/.claude:${HOME}/.claude
+      - ${HOME}/.claude.json:${HOME}/.claude.json
     environment:
       - DISPLAY=${DISPLAY}
       - WANDB_API_KEY=${WANDB_API_KEY}
       - MUJOCO_GL=egl
+      - HOME=${HOME}
     stdin_open: true
     tty: true

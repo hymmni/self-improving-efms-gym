@@ -5,8 +5,17 @@
   "workspaceFolder": "/workspace",
   "shutdownAction": "stopCompose",
   "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "username": "dev",
+      "userUid": "1000",
+      "userGid": "1000",
+      "upgradePackages": false
+    },
     "ghcr.io/devcontainers/features/node:1": {}
   },
+  "remoteUser": "dev",
+  "updateRemoteUserUID": true,
+  "onCreateCommand": "sudo mkdir -p \"$HOME\" && sudo chown dev:dev \"$HOME\"",
   "postCreateCommand": "npm install -g @anthropic-ai/claude-code",
   "customizations": {
     "vscode": {
