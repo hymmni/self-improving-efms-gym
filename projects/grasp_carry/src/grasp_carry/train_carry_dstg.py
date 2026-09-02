@@ -62,9 +62,6 @@ import jax
 import jax.numpy as jnp
 import haiku as hk
 import optax
-import tensorflow_probability.substrates.jax as tfp
-
-tfd = tfp.distributions
 
 OBS_FIELDS = ('frame',)
 DEFAULT_LAYER_SIZES = (256, 256, 256)
@@ -121,6 +118,13 @@ class TrainState(NamedTuple):
 
 
 def main():
+  # 2026-09-02: tfd(Categorical NLL)는 학습 루프(loss_fn/val_metrics)에서만
+  # 쓰인다 — build_dstg_net/compute_stats 등 추론측 유틸은 필요 없으므로
+  # tensorflow-probability를 모듈 최상단이 아니라 여기서 지연 import한다
+  # (train_carry_predictor.py의 지연 import와 동일한 이유).
+  import tensorflow_probability.substrates.jax as tfp
+  tfd = tfp.distributions
+
   ap = argparse.ArgumentParser()
   ap.add_argument('--data', default='data/grasp_carry_demos_v3.pkl')
   ap.add_argument('--include-failures', action='store_true',

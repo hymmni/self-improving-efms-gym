@@ -44,7 +44,6 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from grasp_carry.networks import build_continuous_act_discrete_dist_v0
 from grasp_carry.diffusion_act import build_diffusion_act_chunk, diffusion_loss
 
 OBS_FIELDS = ('frame',)
@@ -202,6 +201,13 @@ def main():
   else:
     if args.horizon != 1:
       raise ValueError('--horizon>1은 diffusion 헤드에서만 지원한다(gaussian은 미지원).')
+    # 2026-09-02: gaussian 헤드(networks.py)만 tensorflow-probability에
+    # 의존한다 — 이 환경은 jax==0.9.2/tfp==0.25.0이 비호환이라(레거시
+    # jax.interpreters.xla 재노출 API가 사라짐) 모듈 최상단에서 import하면
+    # concat_obs 등 tfp를 전혀 안 쓰는 롤아웃/추론 유틸까지 import가 깨진다.
+    # gaussian 경로(여기)만 실제로 필요하므로 지연 import로 스코프를 좁힌다
+    # — jax/tfp 버전 비호환 자체는 그대로 남아있어 이 경로는 여전히 깨져 있다.
+    from grasp_carry.networks import build_continuous_act_discrete_dist_v0
     nets = build_continuous_act_discrete_dist_v0((256, 256, 256), ACT_DIM,
                                                  NUM_BINS, dummy)
   bin_vals = np.linspace(0, MAX_DISTANCE, NUM_BINS + 1,
