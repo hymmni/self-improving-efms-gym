@@ -7,6 +7,19 @@
 | `/opt/venvs/jax` | `projects/grasp_carry/` (`src/grasp_carry/scripts/`, `src/grasp_carry/` 등) | JAX + Haiku + Optax |
 | `/opt/venvs/torch` | `projects/square_assembly/` | PyTorch + robosuite + mujoco |
 
+## 상황별 명령어 요약
+
+| 하고 싶은 것 | 명령어 | 비고 |
+|---|---|---|
+| VS Code로 코드 편집/디버깅 | `Dev Containers: Reopen in Container` | 인텔리센스·디버거·`claude` CLI 자동 세팅 |
+| 터미널에서 학습/평가 스크립트만 빠르게 실행 | `docker compose run --rm dev bash` | 나가면(`exit`) 컨테이너 자동 삭제, 코드는 host에 남음 |
+| 이미 떠 있는 컨테이너에 셸 하나 더 | `docker compose exec dev bash` | `.env`의 `DOCKER_UID`/`DOCKER_GID`(host UID/GID)로 들어감. root 아님 |
+| GPU 서버에서 실행 | `docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm dev bash` | §3 참고 |
+| GUI(mjviewer 등) 띄우기 | `xhost +local:docker` 후 평소처럼 `run` | §4 참고 |
+| `requirements.txt` 등 의존성 변경 반영 | `docker compose build` | §6 참고 |
+| 컨테이너 안에서 `claude` 쓰기 | 그냥 `claude` 실행 | 이미지에 baked-in(§0-1) — devcontainer든 plain run이든 동일 |
+| **claude가 안 될 때** | 먼저 `Dev Containers: Rebuild Container` (그냥 Reopen 아님) | Reopen은 오래된(설정 바뀌기 전) 컨테이너를 그대로 재사용해서 실패할 수 있음. 그래도 안 되면 `docker compose build --no-cache` |
+
 컨테이너는 리포지토리 전체를 `/workspace`에 bind-mount 합니다. 즉 컨테이너 안에서 코드를 고치는 게 아니라, 평소처럼 호스트(VSCode 등)에서 코드를 고치면 컨테이너에 바로 반영됩니다. **코드를 고쳐도 이미지 재빌드는 필요 없습니다.** 의존성(`requirements.txt`)을 바꿨을 때만 재빌드하면 됩니다.
 
 ## 0-1. VS Code로 작업할 때 (Dev Containers)
@@ -20,15 +33,18 @@ VS Code에 [Dev Containers 확장](https://marketplace.visualstudio.com/items?it
 
 컨테이너/창 재시작이 필요 없으니, 두 스택을 오가며 작업해도 VS Code를 하나만 켜두면 됩니다.
 
-컨테이너 안에 Node.js + Claude Code CLI도 같이 설치됩니다(`postCreateCommand`). VS Code 통합 터미널(컨테이너 안 터미널)에서 바로 `claude`를 실행하면, 코드 편집·python 실행이 전부 같은 셸에서 이뤄져 매 명령을 `docker compose exec`로 감쌀 필요가 없습니다. 로그인 정보는 호스트의 `~/.claude`와 `~/.claude.json`을 그대로 bind-mount해서 쓰므로(`docker-compose.yml`) — 자격증명은 `~/.claude/.credentials.json`에, 온보딩/프로젝트 신뢰 상태는 `~/.claude.json`에 나뉘어 있어 둘 다 마운트해야 함 — 호스트에서 이미 로그인돼 있으면 컨테이너 안에서 별도 로그인이 필요 없고, `--rm`으로 컨테이너가 지워지거나 이미지를 재빌드해도 로그인이 유지됩니다. 호스트에 `~/.claude`가 아직 없으면(Claude Code를 host에서 써본 적 없으면) 빈 폴더가 자동 생성되고 컨테이너 안에서 최초 1회 로그인하면 됩니다. 단 `~/.claude.json`은 파일 하나를 바로 마운트하는 거라, 호스트에 그 파일이 아예 없는 상태(=host에서 Claude Code를 한 번도 실행 안 한 상태)로 컨테이너를 띄우면 Docker가 그 경로에 빈 디렉터리를 만들어버려 컨테이너 안 Claude Code가 깨질 수 있음 — 이 경우 호스트에서 `claude`를 한 번 실행해 파일을 만든 뒤 컨테이너를 다시 띄우면 됨.
+컨테이너 안에 Node.js + Claude Code CLI도 같이 들어있습니다(이미지 자체에 baked-in, `docker/Dockerfile` 참고 — devcontainer 전용 설정이 아니라 `docker compose run`으로 띄우는 학습용 컨테이너에도 동일하게 들어있음). VS Code 통합 터미널(컨테이너 안 터미널)에서 바로 `claude`를 실행하면, 코드 편집·python 실행이 전부 같은 셸에서 이뤄져 매 명령을 `docker compose exec`로 감쌀 필요가 없습니다. 로그인 정보는 호스트의 `~/.claude`와 `~/.claude.json`을 그대로 bind-mount해서 쓰므로(`docker-compose.yml`) — 자격증명은 `~/.claude/.credentials.json`에, 온보딩/프로젝트 신뢰 상태는 `~/.claude.json`에 나뉘어 있어 둘 다 마운트해야 함 — 호스트에서 이미 로그인돼 있으면 컨테이너 안에서 별도 로그인이 필요 없고, `--rm`으로 컨테이너가 지워지거나 이미지를 재빌드해도 로그인이 유지됩니다. 호스트에 `~/.claude`가 아직 없으면(Claude Code를 host에서 써본 적 없으면) 빈 폴더가 자동 생성되고 컨테이너 안에서 최초 1회 로그인하면 됩니다. 단 `~/.claude.json`은 파일 하나를 바로 마운트하는 거라, 호스트에 그 파일이 아예 없는 상태(=host에서 Claude Code를 한 번도 실행 안 한 상태)로 컨테이너를 띄우면 Docker가 그 경로에 빈 디렉터리를 만들어버려 컨테이너 안 Claude Code가 깨질 수 있음 — 이 경우 호스트에서 `claude`를 한 번 실행해 파일을 만든 뒤 컨테이너를 다시 띄우면 됨.
 
-이 mount는 컨테이너 경로와 호스트 경로가 완전히 동일해야 합니다(`${HOME}/.claude`) — Claude Code 내부 설정(플러그인/마켓플레이스 등)이 절대경로를 그대로 저장하기 때문입니다. 그래서 VS Code Dev Container는 root가 아니라 `dev`라는 non-root 사용자로 실행됩니다(`common-utils` feature + `updateRemoteUserUID: true`로 호스트 UID/GID를 자동으로 맞춤). root로 실행하면 컨테이너 안에서 새로 생기는 설정/세션 파일이 전부 root 소유로 호스트에 그대로 남아 `~/.claude`를 오염시키기 때문에 반드시 non-root여야 합니다. (`docker compose run`으로 직접 띄우는 학습용 컨테이너는 이 영향 없이 그대로 root로 동작합니다 — `dev` 사용자 전환은 devcontainer 경로에만 적용됨.)
+이 mount는 컨테이너 경로와 호스트 경로가 완전히 동일해야 합니다(`${HOME}/.claude`) — Claude Code 내부 설정(플러그인/마켓플레이스 등)이 절대경로를 그대로 저장하기 때문입니다. 그리고 컨테이너가 root로 돌면 그 안에서 새로 생기는 설정/세션 파일이 전부 root 소유로 호스트에 그대로 남아 `~/.claude`를 오염시킵니다 — `claude`는 이미지 어디서든(devcontainer든 `docker compose run`이든) 실행 가능하므로, 이 위험은 경로를 가리지 않습니다.
+
+그래서 `docker-compose.yml`의 `dev` 서비스 자체가 root가 아니라 `.env`의 `DOCKER_UID`/`DOCKER_GID`(=호스트 사용자 UID/GID)로 돌게 고정돼 있습니다 — devcontainer, `docker compose run`, `docker compose exec` 전부 이 설정을 그대로 따릅니다. VS Code Dev Container는 여기에 더해 `common-utils` feature + `updateRemoteUserUID: true`로 실제 리눅스 유저 이름(`dev`)까지 만들어주지만(VS Code 통합 터미널·디버거가 유저 이름을 필요로 함), 핵심 오염 방지 자체는 `docker-compose.yml`의 UID/GID 고정에서 나옵니다.
 
 ## 0. 최초 1회 준비
 
 ```bash
 cp .env.example .env
-# .env 파일 열어서 WANDB_API_KEY 채우기
+sed -i "s/^DOCKER_UID=.*/DOCKER_UID=$(id -u)/; s/^DOCKER_GID=.*/DOCKER_GID=$(id -g)/" .env
+# .env 파일 열어서 WANDB_API_KEY도 채우기 (DOCKER_UID/GID는 위 sed가 자동으로 채움)
 ```
 
 ## 1. 빌드

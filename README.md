@@ -30,6 +30,7 @@ references/          # 원본 참조 코드 (읽기 전용)
 
 ```bash
 cp .env.example .env        # WANDB_API_KEY 등 채우기 (없어도 대부분 기능은 동작)
+sed -i "s/^DOCKER_UID=.*/DOCKER_UID=$(id -u)/; s/^DOCKER_GID=.*/DOCKER_GID=$(id -g)/" .env
 ```
 
 **1) 이미지 빌드**

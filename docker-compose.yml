@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     image: self-improving-gym/dev:latest
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     working_dir: /workspace
     volumes:
       - .:/workspace

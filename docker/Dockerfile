@@ -19,7 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git ffmpeg build-essential cmake \
         libgl1 libglx-mesa0 libegl1 libosmesa6 libglew2.2 libglfw3 \
         libx11-6 libxext6 libxrender1 libxrandr2 libxinerama1 libxcursor1 libxi6 \
-    && rm -rf /var/lib/apt/lists/*
+        nodejs npm \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g @anthropic-ai/claude-code
 
 WORKDIR /workspace
 
@@ -32,6 +34,10 @@ RUN python3 -m venv /opt/venvs/jax \
 COPY projects/square_assembly/requirements.txt ./projects/square_assembly/requirements.txt
 RUN python3 -m venv /opt/venvs/torch \
     && /opt/venvs/torch/bin/pip install --no-cache-dir -r projects/square_assembly/requirements.txt
+
+# 컨테이너가 root가 아니라 host UID로 도므로(docker-compose.yml user:), 그 UID가 여기에
+# 계속 pip install 할 수 있도록 world-writable로 열어둠 — 단일 개발자용 로컬 이미지라 허용.
+RUN chmod -R o+w /opt/venvs
 
 # grasp_carry/square_assembly 소스는 이미지에 굽지 않음 — 런타임에 bind-mount로 들어오고,
 # PYTHONPATH가 그 경로들을 잡아주므로 jax venv에서 `import grasp_carry`가, torch venv에서
